@@ -7,6 +7,66 @@ may break APIs).
 
 ## [Unreleased]
 
+The `/v1/responses` host is now stateful, closing the largest hosting gap
+against upstream: a conversation can be continued, and a workflow paused on
+a human-in-the-loop request can be resumed, across HTTP requests.
+
+**Breaking, in two places.** `agent_framework_hosting::ResponsesRequest`
+gains continuation and generation-option fields and `ResponseObject` gains
+`previous_response_id` and `conversation`, so a struct literal for either
+without `..Default::default()` needs them. `ContextProvider` gains a defaulted
+`history_snapshot` method, which only matters to an implementation that
+already defines a method of that name.
+
+**One behaviour change.** `Workflow::run_from_checkpoint` now keeps
+checkpointing into the storage it resumed from, overriding the build-time
+storage, as upstream's runtime `checkpoint_storage` does. A run resumed from
+a store used to write its next checkpoint to the build-time storage (or
+nowhere), so a run that paused twice could not be resumed the second time.
+
+### Added
+
+- **Session stores** (`agent_framework_core::session_store`): the
+  `SessionStore` trait plus `InMemorySessionStore` and `FileSessionStore`,
+  porting upstream's experimental `SessionStore` / `FileSessionStore`. Reads
+  return independent copies, so callers can branch from one snapshot. The
+  file store writes atomically (temp file + rename), maps ids to filenames
+  through the injective `storage_keys` encoding (with a SHA-256 stem past
+  filename limits), refuses an unknown snapshot version, and quarantines a
+  file that does not parse so a retry starts fresh. A snapshot carries the
+  session's state and the history of any in-process history provider
+  (`ContextProvider::history_snapshot`), since here history lives in the
+  provider rather than in `session.state` as upstream keeps it.
+- **`AgentState` / `WorkflowState`** (`agent_framework_hosting::state`),
+  porting upstream's `agent-framework-hosting` package: an agent or workflow
+  target (instance, builder, or cached/uncached factory) plus, for agents, a
+  session store with `get_or_create_session` / `set_session`.
+- **Responses continuation helpers**, porting upstream
+  `agent-framework-hosting-responses`: `responses_session_id`
+  (`previous_response_id`, `conversation` as a string or `{id}`, and the
+  deprecated `conversation_id`, mutually exclusive), `create_response_id`,
+  `create_conversation_id`, and `responses_run_options` (`temperature`,
+  `top_p`, `max_output_tokens` → `max_tokens`, `parallel_tool_calls` →
+  `allow_multiple_tool_calls`, `instructions`, `user`).
+- **Stateful `/v1/responses`** on `AgentHost`. Every agent response is
+  stored and continuable by `previous_response_id`; `conversation` advances a
+  mutable head, with turns on one conversation serialized; an unknown
+  `previous_response_id` is a `400 previous_response_not_found`, as on
+  OpenAI's API. Keys are scoped per entity. `AgentHost::with_session_store`
+  swaps in a durable store. Workflows run inside a conversation with its own
+  checkpoint storage (`AgentHost::with_checkpoint_storage_factory`), and a
+  paused run resumes when a later request carries DevUI's
+  `workflow_hil_response` content, or names `extra_body.checkpoint_id`.
+- `Workflow::run_with_checkpointing` — checkpoint storage for one run,
+  overriding the build-time storage.
+- `AgentSession::with_session_id`.
+
+### Changed
+
+- Response ids minted by the host are `resp_` plus a full UUID (32 hex
+  digits) rather than 8: they now key stored sessions, where a collision
+  would hand one caller another's conversation.
+
 ## [0.9.0] — 2026-09-30
 
 Four values the code already had and never read, a Foundry surface it could

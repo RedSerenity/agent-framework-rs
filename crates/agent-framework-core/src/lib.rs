@@ -13,6 +13,9 @@
 //! - [`tools`] — executable tools and hosted-tool markers.
 //! - [`session`] — [`AgentSession`](session::AgentSession), a lightweight
 //!   conversation identity + state container.
+//! - [`session_store`] — [`SessionStore`](session_store::SessionStore)s
+//!   (in-memory and file-backed) keeping session snapshots by id, for hosts
+//!   that continue a conversation across requests.
 //! - [`history`] — [`HistoryProvider`](history::HistoryProvider)s: conversation
 //!   history as a [`ContextProvider`](memory::ContextProvider).
 //! - [`memory`] — context / memory providers.
@@ -52,6 +55,7 @@ pub mod memory;
 pub mod middleware;
 pub mod observability;
 pub mod session;
+pub mod session_store;
 pub mod settings;
 pub mod skills;
 pub mod storage_keys;
@@ -86,6 +90,7 @@ pub mod prelude {
     };
     pub use crate::observability::{ObservabilityConfig, ObservableChatClient};
     pub use crate::session::{AgentSession, SessionState};
+    pub use crate::session_store::{FileSessionStore, InMemorySessionStore, SessionStore};
     pub use crate::settings::{load_setting, SecretString};
     pub use crate::skills::{Skill, SkillsProvider};
     pub use crate::tools::{

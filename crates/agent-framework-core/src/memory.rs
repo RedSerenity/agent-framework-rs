@@ -83,6 +83,20 @@ pub trait ContextProvider: Send + Sync {
     fn is_history_provider(&self) -> bool {
         false
     }
+
+    /// The conversation history this provider holds **in process**, for a
+    /// [`SessionStore`](crate::session_store::SessionStore) to snapshot.
+    ///
+    /// Upstream keeps in-memory history in `session.state`, so persisting a
+    /// session persists its history for free. Here an
+    /// [`InMemoryHistoryProvider`](crate::history::InMemoryHistoryProvider)
+    /// owns it instead, so the store asks for it explicitly. Only a provider
+    /// whose history would otherwise be lost with the process returns
+    /// `Some`; one backed by external storage (a file, Redis, a database)
+    /// returns `None`, because its history already outlives the session.
+    fn history_snapshot(&self) -> Option<Vec<Message>> {
+        None
+    }
 }
 
 #[cfg(test)]

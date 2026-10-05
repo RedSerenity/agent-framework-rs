@@ -60,19 +60,26 @@
 //! a full example).
 //!
 //! ## Divergences from the reference
-//! Per-surface divergences (stateless runs, streaming realized by run-to-
-//! completion, metadata-derived A2A skills, omitted fields) are documented on
-//! each module. The most consequential: **runs are stateless** — there is no
-//! conversation store or workflow-resume endpoint, matching the work package's
-//! decision that DevUI exposes no HTTP run-resume path of its own.
+//! Per-surface divergences (streaming realized by run-to-completion,
+//! metadata-derived A2A skills, omitted fields) are documented on each module.
+//! The `/v1/responses` surface is **stateful**: `previous_response_id` and
+//! `conversation` continue agent sessions kept in a
+//! [`SessionStore`](agent_framework_core::session_store::SessionStore), and a
+//! paused workflow resumes from its conversation's checkpoints (see
+//! [`devui`]). [`AgentState`] and [`WorkflowState`] expose the same building
+//! blocks for applications that own their routes, as upstream's
+//! `agent-framework-hosting` package does. The OpenAI chat-completions, A2A
+//! and AG-UI surfaces remain stateless per request.
 
 pub mod a2a;
 pub mod agui;
+mod continuation;
 pub mod devui;
 pub mod openai_compat;
 pub mod registry;
 pub mod responses;
 pub mod security;
+pub mod state;
 
 mod sse;
 mod ui;
@@ -82,6 +89,7 @@ pub use registry::{AgentHost, AgentRegistration, IntoAgentRegistration};
 
 // Re-export the reusable composed-router security layer.
 pub use security::HostingSecurity;
+pub use state::{AgentState, WorkflowState};
 
 // Re-export the DevUI model types for callers building responses/clients.
 pub use devui::models::{DiscoveryResponse, EntityInfo, HealthResponse};
@@ -89,6 +97,7 @@ pub use devui::models::{DiscoveryResponse, EntityInfo, HealthResponse};
 // Re-export the reusable OpenAI-Responses conversion surface (mirrors
 // upstream `hosting-responses`; UPSTREAM_DRIFT.md §14).
 pub use responses::{
-    responses_from_run, responses_to_run, OutputFunctionCall, OutputItem, ResponseObject,
-    ResponsesRequest,
+    create_conversation_id, create_response_id, responses_from_run, responses_run_options,
+    responses_session_id, responses_to_run, ConversationRef, OutputFunctionCall, OutputItem,
+    ResponseObject, ResponsesContinuation, ResponsesRequest,
 };

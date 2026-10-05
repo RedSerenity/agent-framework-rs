@@ -9,6 +9,50 @@ independently verified (full workspace build + `cargo test` + clippy
 **Current upstream baseline: `dc8e226` (2026-09-28).** Sections are newest
 first; each records the upstream revision it was checked against.
 
+## Stateful Responses hosting (checked against `b9d24c8`, 2026-10-05)
+
+First item of a parity push against current upstream `main`. An independent
+re-audit found the `/v1/responses` host stateless — no `previous_response_id`,
+no conversations, and no way to resume a workflow paused on a
+human-in-the-loop request over HTTP — where upstream ships three packages for
+exactly this: core `SessionStore` / `FileSessionStore`,
+`agent-framework-hosting` (`AgentState` / `WorkflowState`), and
+`agent-framework-hosting-responses` (continuation helpers), plus DevUI's
+per-conversation checkpoint resume.
+
+### What landed
+
+| Upstream | Rust |
+|---|---|
+| `SessionStore`, `FileSessionStore` (`_sessions.py`) | `core::session_store` — trait + in-memory + file. Independent copies on read; atomic writes; injective id→filename mapping with a digest stem past filename limits; version check; corrupt-file quarantine. Snapshots carry in-process history via the new `ContextProvider::history_snapshot`, because Rust keeps history in the provider where upstream keeps it in `session.state`. MessagePack not ported. |
+| `AgentState`, `WorkflowState` (`hosting/_state.py`) | `hosting::state` — instance / builder / cached-or-not factory targets; per-id serialized session creation. |
+| `responses_session_id`, `create_response_id`, `create_conversation_id`, the options half of `responses_to_run` | `hosting::responses` — same validation (mutually exclusive, non-empty, `{id}` form, deprecated `conversation_id`), same option remaps. |
+| `workflow.run(checkpoint_storage=...)` runtime override | `Workflow::run_with_checkpointing`; `run_from_checkpoint` now keeps writing to the storage it resumed from. Without that, a run that paused twice could not be resumed the second time — pinned by `runtime_checkpoint_storage_survives_two_pauses`. |
+| DevUI `_execute_workflow` (`workflow_hil_response`, per-conversation `InMemoryCheckpointStorage`, `extra_body.checkpoint_id`) | `AgentHost`'s `/v1/responses` workflow path. |
+
+Two deliberate divergences. An unknown `previous_response_id` is a `400
+previous_response_not_found` (OpenAI's behaviour) rather than upstream's
+example `get_or_create`, which turns a typo into a silently fresh
+conversation; an unknown `conversation` still starts one. And every agent
+response is stored under its own id *and* advances the conversation head,
+so any response is a branch point — upstream's example stores one or the
+other.
+
+Verified: `cargo test --workspace --all-features` (**2177 passing, 0
+failing**), clippy `--all-targets --all-features -D warnings`, `cargo fmt
+--check`, `cargo doc` with `-D warnings`. The workflow-resume tests were
+probed by removing the runtime storage override: three fail.
+
+### Still open from the same re-audit
+
+MCP server hosting and MCP `resources/*`; the harness, agent hooks and
+evaluation modules; upstream-compatible (PowerFx) declarative workflows;
+and the unported connector packages (Postgres, Qdrant, MongoDB, DuckDB, SQL
+Server, DocumentDB, Valkey, Cosmos memory, Content Understanding), sandboxes
+(Hyperlight, Monty, shell tools), `claude`, `typesafe`, `chatkit`,
+`hosting-telegram`, `foundry_hosting`, functional workflows, OpenAI
+computer-use / shell tools, and DevUI's `/v1/conversations` API.
+
 ## Tool-call serialization on both hosting surfaces (same upstream baseline, `dc8e226`)
 
 The round below recorded "neither hosting surface serializes tool calls" as

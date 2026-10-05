@@ -1229,3 +1229,66 @@ fn workflow_builder_rejects_overlapping_output_designation_at_build() {
     };
     assert!(err.to_string().contains("OUTPUT_VALIDATION"));
 }
+
+// ----------------------------------------------------------------------------
+// Runtime checkpoint storage (upstream `run(checkpoint_storage=...)`)
+// ----------------------------------------------------------------------------
+
+/// A workflow built with no checkpointing still checkpoints into storage
+/// supplied for one run, and a run resumed from that storage keeps writing
+/// to it — so a run that pauses twice can be resumed twice, each time from
+/// the storage alone.
+#[tokio::test]
+async fn runtime_checkpoint_storage_survives_two_pauses() {
+    let asker = FunctionExecutor::new("asker", |msg, ctx| async move {
+        match RequestResponse::from_message(&msg) {
+            Some(resp) if resp.data == json!("first") => ctx.send_message(json!("q2")).await?,
+            Some(resp) => ctx.yield_output(resp.data).await?,
+            None => ctx.send_message(msg).await?,
+        }
+        Ok(())
+    });
+    let workflow = WorkflowBuilder::new()
+        .add_executor(Arc::new(asker))
+        .add_executor(Arc::new(RequestInfoExecutor::new("ask")))
+        .set_start("asker")
+        .add_edge("asker", "ask")
+        .build()
+        .unwrap();
+    let storage: Arc<dyn CheckpointStorage> = Arc::new(InMemoryCheckpointStorage::new());
+    let latest = |storage: Arc<dyn CheckpointStorage>| async move {
+        storage
+            .list(None)
+            .await
+            .unwrap()
+            .into_iter()
+            .max_by_key(|c| (c.timestamp_millis, c.iteration_count))
+            .unwrap()
+            .checkpoint_id
+    };
+
+    let run = workflow
+        .run_with_checkpointing(json!("q1"), storage.clone())
+        .await
+        .unwrap();
+    let first = run.pending_requests()[0].request_id.clone();
+    drop(run);
+
+    let mut run = workflow
+        .run_from_checkpoint(&latest(storage.clone()).await, storage.clone())
+        .await
+        .unwrap();
+    run.send_response(first, json!("first")).await.unwrap();
+    let second = run.pending_requests()[0].clone();
+    assert_eq!(second.request_data, json!("q2"));
+    drop(run);
+
+    let mut run = workflow
+        .run_from_checkpoint(&latest(storage.clone()).await, storage)
+        .await
+        .unwrap();
+    run.send_response(second.request_id, json!("Ada"))
+        .await
+        .unwrap();
+    assert_eq!(run.last_output(), Some(json!("Ada")));
+}

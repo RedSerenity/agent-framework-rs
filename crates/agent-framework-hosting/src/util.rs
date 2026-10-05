@@ -20,11 +20,6 @@ pub(crate) fn short_hex() -> String {
     Uuid::new_v4().simple().to_string()[..8].to_string()
 }
 
-/// A `resp_…` id (OpenAI response id convention).
-pub(crate) fn resp_id() -> String {
-    format!("resp_{}", short_hex())
-}
-
 /// A `msg_…` id (OpenAI message-item id convention).
 pub(crate) fn msg_id() -> String {
     format!("msg_{}", short_hex())

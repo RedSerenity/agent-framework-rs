@@ -5,8 +5,10 @@
 //! and `GET /ui`. It fetches the entity list from `GET /v1/entities`, lets you
 //! pick an entity, and runs it through `POST /v1/responses` — rendering the SSE
 //! stream incrementally (live `output_text` deltas, collapsible executor /
-//! workflow-event rows, and an inline notice for pending `request_info` events,
-//! whose resume-over-HTTP is not supported by this host). A non-stream toggle
+//! workflow-event rows, and an inline notice for pending `request_info` events).
+//! The page itself does not answer those requests; a client resumes the run by
+//! posting a `workflow_hil_response` on the run's conversation (see
+//! [`crate::devui`]). A non-stream toggle
 //! posts with `stream:false` and renders the aggregated JSON response instead.
 //!
 //! This is a **pragmatic debug UI**, deliberately minimal — it is *not* the

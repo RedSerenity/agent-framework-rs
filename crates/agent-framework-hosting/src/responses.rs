@@ -24,8 +24,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use agent_framework_core::agent::AgentRunOptions;
 use agent_framework_core::types::{
-    AgentResponse, Content, FinishReason, FunctionArguments, FunctionCallContent,
+    AgentResponse, ChatOptions, Content, FinishReason, FunctionArguments, FunctionCallContent,
     FunctionResultContent, Message, Role, UsageDetails,
 };
 
@@ -50,6 +51,174 @@ pub struct ResponsesRequest {
     /// Advanced routing; `extra_body.entity_id` is accepted as a fallback.
     #[serde(default)]
     pub extra_body: Option<Map<String, Value>>,
+    /// Continue from an earlier response: its stored session is restored as
+    /// a working copy, and the earlier snapshot is left untouched. Mutually
+    /// exclusive with `conversation`. Kept as a raw value so a malformed one
+    /// is reported, not silently dropped — see [`responses_session_id`].
+    #[serde(default)]
+    pub previous_response_id: Option<Value>,
+    /// Continue a conversation: a `conv_*` id string or `{"id": ...}`. Unlike
+    /// a response id this names a mutable head, advanced by every run.
+    #[serde(default)]
+    pub conversation: Option<Value>,
+    /// Deprecated spelling of `conversation`, accepted only on its own.
+    #[serde(default)]
+    pub conversation_id: Option<Value>,
+    /// Extra instructions for this run.
+    #[serde(default)]
+    pub instructions: Option<String>,
+    /// Sampling temperature.
+    #[serde(default)]
+    pub temperature: Option<f32>,
+    /// Nucleus-sampling mass.
+    #[serde(default)]
+    pub top_p: Option<f32>,
+    /// Output-token cap; maps to `ChatOptions::max_tokens`.
+    #[serde(default)]
+    pub max_output_tokens: Option<u32>,
+    /// Maps to `ChatOptions::allow_multiple_tool_calls`.
+    #[serde(default)]
+    pub parallel_tool_calls: Option<bool>,
+    /// End-user identifier.
+    #[serde(default)]
+    pub user: Option<String>,
+}
+
+/// Which continuation mechanism a request used. See
+/// [`responses_session_id`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResponsesContinuation {
+    /// `previous_response_id`: an immutable snapshot to branch from.
+    PreviousResponse(String),
+    /// `conversation` (or the deprecated `conversation_id`): a mutable head.
+    Conversation(String),
+}
+
+impl ResponsesContinuation {
+    /// The id, whichever mechanism carried it.
+    pub fn id(&self) -> &str {
+        match self {
+            Self::PreviousResponse(id) | Self::Conversation(id) => id,
+        }
+    }
+
+    /// Whether this is a conversation id (upstream's `is_conversation_id`).
+    pub fn is_conversation(&self) -> bool {
+        matches!(self, Self::Conversation(_))
+    }
+}
+
+/// The session a Responses request continues, if any. Mirrors upstream's
+/// `responses_session_id`, which returns `(session_id, is_conversation_id)`.
+///
+/// `previous_response_id`, `conversation` and `conversation_id` are mutually
+/// exclusive, and each must be a non-empty string (`conversation` may also be
+/// `{"id": "..."}`). `conversation_id` is the deprecated spelling and is
+/// honored only on its own. An id without the usual `resp_` / `conv_` prefix
+/// is accepted, as upstream accepts it (with a warning there; a `tracing`
+/// debug line here).
+///
+/// # Errors
+/// A message suitable for a `400` when a field is malformed or two
+/// mechanisms are combined.
+pub fn responses_session_id(
+    request: &ResponsesRequest,
+) -> std::result::Result<Option<ResponsesContinuation>, String> {
+    let present = |v: &Option<Value>| v.as_ref().is_some_and(|v| !v.is_null());
+    let supplied = [
+        present(&request.previous_response_id),
+        present(&request.conversation),
+        present(&request.conversation_id),
+    ];
+    if supplied.iter().filter(|s| **s).count() > 1 {
+        return Err(
+            "`previous_response_id`, `conversation`, and `conversation_id` are mutually exclusive"
+                .into(),
+        );
+    }
+    let non_empty = |v: Option<&Value>| {
+        v.and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
+    if supplied[0] {
+        let id = non_empty(request.previous_response_id.as_ref())
+            .ok_or("`previous_response_id` must be a non-empty string")?;
+        if !id.starts_with("resp_") {
+            tracing::debug!(%id, "`previous_response_id` lacks the `resp_` prefix; continuing");
+        }
+        return Ok(Some(ResponsesContinuation::PreviousResponse(id)));
+    }
+    let id = if supplied[1] {
+        let value = request.conversation.as_ref();
+        let value = match value {
+            Some(Value::Object(m)) => m.get("id"),
+            other => other,
+        };
+        non_empty(value).ok_or(
+            "`conversation` must be a non-empty string or an object with a non-empty string `id`",
+        )?
+    } else if supplied[2] {
+        non_empty(request.conversation_id.as_ref())
+            .ok_or("`conversation_id` must be a non-empty string")?
+    } else {
+        return Ok(None);
+    };
+    if !id.starts_with("conv_") {
+        tracing::debug!(%id, "conversation id lacks the `conv_` prefix; continuing");
+    }
+    Ok(Some(ResponsesContinuation::Conversation(id)))
+}
+
+/// A Responses-shaped response id: `resp_` and 32 hex digits. Mirrors
+/// upstream's `create_response_id`. The full UUID matters: these ids key
+/// stored sessions, so a short one that collides would hand one caller
+/// another's conversation.
+pub fn create_response_id() -> String {
+    format!("resp_{}", uuid::Uuid::new_v4().simple())
+}
+
+/// A Responses-shaped conversation id: `conv_` and 32 hex digits. Mirrors
+/// upstream's `create_conversation_id`.
+pub fn create_conversation_id() -> String {
+    format!("conv_{}", uuid::Uuid::new_v4().simple())
+}
+
+/// The per-run options a Responses request carries, as [`AgentRunOptions`].
+///
+/// The other half of upstream's `responses_to_run`, which returns options
+/// alongside the messages: `max_output_tokens` becomes `max_tokens` and
+/// `parallel_tool_calls` becomes `allow_multiple_tool_calls`, as there.
+/// Transport fields (`input`, `stream`, the continuation ids) and this
+/// crate's routing fields (`model`, `metadata`, `extra_body`) are not
+/// options and are not copied.
+pub fn responses_run_options(request: &ResponsesRequest) -> AgentRunOptions {
+    let any = request.instructions.is_some()
+        || request.temperature.is_some()
+        || request.top_p.is_some()
+        || request.max_output_tokens.is_some()
+        || request.parallel_tool_calls.is_some()
+        || request.user.is_some();
+    if !any {
+        // Empty options keep agents that do not support per-run options
+        // from warning about options nobody sent.
+        return AgentRunOptions::default();
+    }
+    AgentRunOptions::default().with_chat_options(ChatOptions {
+        instructions: request.instructions.clone(),
+        temperature: request.temperature,
+        top_p: request.top_p,
+        max_tokens: request.max_output_tokens,
+        allow_multiple_tool_calls: request.parallel_tool_calls,
+        user: request.user.clone(),
+        ..Default::default()
+    })
+}
+
+/// The `conversation` field of a response object: `{"id": "conv_..."}`.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ConversationRef {
+    pub id: String,
 }
 
 impl ResponsesRequest {
@@ -312,6 +481,12 @@ pub struct ResponseObject {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub x_finish_reason: Option<String>,
     pub output: Vec<OutputItem>,
+    /// The response this one continued, when the request named one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_response_id: Option<String>,
+    /// The conversation this response belongs to, when there is one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conversation: Option<ConversationRef>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -338,6 +513,8 @@ impl ResponseObject {
             incomplete_details: None,
             x_finish_reason: None,
             output: Vec::new(),
+            previous_response_id: None,
+            conversation: None,
             output_text: None,
             usage: None,
             outputs: None,
@@ -346,6 +523,22 @@ impl ResponseObject {
             tool_choice: "none",
             tools: Vec::new(),
         }
+    }
+
+    /// Record the continuation this response belongs to: `conversation`
+    /// for a conversation, `previous_response_id` for a branch. Mirrors
+    /// upstream `responses_from_run(..., conversation_id=...)`.
+    pub fn with_continuation(mut self, continuation: Option<&ResponsesContinuation>) -> Self {
+        match continuation {
+            Some(ResponsesContinuation::Conversation(id)) => {
+                self.conversation = Some(ConversationRef { id: id.clone() });
+            }
+            Some(ResponsesContinuation::PreviousResponse(id)) => {
+                self.previous_response_id = Some(id.clone());
+            }
+            None => {}
+        }
+        self
     }
 }
 
@@ -555,6 +748,8 @@ pub fn responses_from_run(resp: &AgentResponse, id: &str, model: &str) -> Respon
         // item at all — an empty assistant message would read as a blank
         // answer rather than as a call to execute.
         output: output_items(&text, &calls, mid, status),
+        previous_response_id: None,
+        conversation: None,
         output_text: Some(text),
         usage: resp.usage_details.as_ref().map(usage_from_details),
         outputs: None,

@@ -10,7 +10,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use agent_framework_core::agent::{Agent, SupportsAgentRun};
-use agent_framework_core::workflow::{Workflow, WorkflowAgent};
+use agent_framework_core::session_store::SessionStore;
+use agent_framework_core::workflow::{CheckpointStorage, Workflow, WorkflowAgent};
+
+use crate::continuation::{CheckpointStorageFactory, Continuations};
 
 /// An agent plus the display metadata captured from its concrete type.
 ///
@@ -138,6 +141,8 @@ pub(crate) enum EntityRecord {
 pub(crate) struct HostState {
     entities: Vec<EntityRecord>,
     index: HashMap<String, usize>,
+    /// Sessions and checkpoints that let a request continue an earlier one.
+    pub(crate) continuations: Continuations,
 }
 
 impl HostState {
@@ -169,6 +174,8 @@ pub struct AgentHost {
     index: HashMap<String, usize>,
     bearer_token: Option<String>,
     allowed_hosts: Option<Vec<String>>,
+    session_store: Option<Arc<dyn SessionStore>>,
+    checkpoint_factory: Option<CheckpointStorageFactory>,
 }
 
 impl AgentHost {
@@ -192,6 +199,31 @@ impl AgentHost {
     /// [`crate::security::host_guard`].
     pub fn with_allowed_hosts(mut self, hosts: Vec<String>) -> Self {
         self.allowed_hosts = Some(hosts);
+        self
+    }
+
+    /// Keep agent sessions in `store` instead of the default in-memory one,
+    /// so `previous_response_id` and `conversation` survive a restart (a
+    /// [`FileSessionStore`](agent_framework_core::session_store::FileSessionStore),
+    /// say, or a custom database-backed store).
+    ///
+    /// The store sees one key per response and per conversation, scoped by
+    /// entity id. Nothing is evicted by the host: a response id stays
+    /// continuable for as long as the store keeps it.
+    pub fn with_session_store(mut self, store: Arc<dyn SessionStore>) -> Self {
+        self.session_store = Some(store);
+        self
+    }
+
+    /// Build each workflow conversation's checkpoint storage with `factory`
+    /// instead of a fresh
+    /// [`InMemoryCheckpointStorage`](agent_framework_core::workflow::InMemoryCheckpointStorage).
+    /// Called once per conversation, the first time it runs.
+    pub fn with_checkpoint_storage_factory<F>(mut self, factory: F) -> Self
+    where
+        F: Fn() -> Arc<dyn CheckpointStorage> + Send + Sync + 'static,
+    {
+        self.checkpoint_factory = Some(Arc::new(factory));
         self
     }
 
@@ -260,6 +292,7 @@ impl AgentHost {
         Arc::new(HostState {
             entities: self.entities,
             index: self.index,
+            continuations: Continuations::new(self.session_store, self.checkpoint_factory),
         })
     }
 

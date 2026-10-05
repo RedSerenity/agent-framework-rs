@@ -179,6 +179,17 @@ impl AgentSession {
         }
     }
 
+    /// Replace this session's local identifier.
+    ///
+    /// Hosting code keys sessions by an id the *protocol* chooses (an OpenAI
+    /// Responses `resp_*` or `conv_*` id, say), so a session created for one
+    /// takes that id rather than a random one. Mirrors upstream's
+    /// `create_session(session_id=...)`.
+    pub fn with_session_id(mut self, id: impl Into<String>) -> Self {
+        self.session_id = id.into();
+        self
+    }
+
     /// Attach context providers to this session, replacing any previously set.
     pub fn with_context_providers(mut self, providers: Vec<Arc<dyn ContextProvider>>) -> Self {
         self.context_providers = providers;

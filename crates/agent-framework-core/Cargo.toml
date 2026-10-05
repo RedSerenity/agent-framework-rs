@@ -23,6 +23,8 @@ uuid = { workspace = true }
 schemars = { workspace = true }
 tokio-stream = { workspace = true }
 pin-project-lite = { workspace = true }
+# `FileSessionStore` names an over-long id by its digest.
+sha2 = "0.10"
 # Optional: GenAI metrics behind the `otel-metrics` feature. API crate only —
 # no SDK/exporter is pulled in; see `observability` module docs.
 opentelemetry = { workspace = true, optional = true }

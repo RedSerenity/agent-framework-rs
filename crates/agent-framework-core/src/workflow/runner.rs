@@ -491,6 +491,23 @@ impl Workflow {
         Ok(run)
     }
 
+    /// Run the workflow with `storage` as its checkpoint storage for this run
+    /// only, overriding any storage set with
+    /// [`WorkflowBuilder::with_checkpointing`]. Mirrors upstream's
+    /// `workflow.run(..., checkpoint_storage=...)`: a host can give each
+    /// conversation its own storage and resume a paused run from it later
+    /// with [`Workflow::run_from_checkpoint`].
+    pub async fn run_with_checkpointing(
+        &self,
+        input: impl Into<Value>,
+        storage: Arc<dyn CheckpointStorage>,
+    ) -> Result<WorkflowRun> {
+        let mut run = WorkflowRun::new(self.shared.clone(), None);
+        run.checkpoint_storage = Some(storage);
+        run.start(input.into()).await?;
+        Ok(run)
+    }
+
     /// Run the workflow, streaming events as they happen.
     ///
     /// Returns a [`WorkflowRunStream`] that yields [`WorkflowEvent`]s live; call
@@ -562,6 +579,12 @@ impl Workflow {
             .ok_or_else(|| Error::Workflow(format!("checkpoint '{checkpoint_id}' not found")))?;
         self.check_graph_signature(&cp, validate)?;
         let mut run = WorkflowRun::new(self.shared.clone(), None);
+        // The storage a run was resumed from is where it keeps
+        // checkpointing, overriding any build-time storage — upstream's
+        // "runtime storage takes precedence". Otherwise a run resumed from a
+        // per-conversation store would write its next checkpoint somewhere
+        // else (or nowhere), and a second pause could not be resumed.
+        run.checkpoint_storage = Some(storage);
         run.restore(cp).await?;
         Ok(run)
     }
@@ -655,11 +678,15 @@ pub struct WorkflowRun {
     events: Vec<WorkflowEvent>,
     state: WorkflowRunState,
     event_tx: Option<UnboundedSender<WorkflowEvent>>,
+    /// Where this run writes its superstep checkpoints: the build-time
+    /// storage unless the run was started with a runtime override.
+    checkpoint_storage: Option<Arc<dyn CheckpointStorage>>,
 }
 
 impl WorkflowRun {
     fn new(shared: Arc<WorkflowShared>, event_tx: Option<UnboundedSender<WorkflowEvent>>) -> Self {
         Self {
+            checkpoint_storage: shared.checkpoint_storage.clone(),
             shared,
             shared_state: SharedState::new(),
             queue: Vec::new(),
@@ -1041,7 +1068,7 @@ impl WorkflowRun {
     }
 
     async fn maybe_checkpoint(&self, step: usize) {
-        let Some(storage) = self.shared.checkpoint_storage.clone() else {
+        let Some(storage) = self.checkpoint_storage.clone() else {
             return;
         };
         let mut executor_states: HashMap<String, Value> = HashMap::new();

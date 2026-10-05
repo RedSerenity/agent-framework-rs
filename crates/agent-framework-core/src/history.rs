@@ -375,6 +375,10 @@ impl ContextProvider for InMemoryHistoryProvider {
     fn is_history_provider(&self) -> bool {
         true
     }
+
+    fn history_snapshot(&self) -> Option<Vec<Message>> {
+        Some(self.list_messages())
+    }
 }
 
 impl HistoryProvider for InMemoryHistoryProvider {}
