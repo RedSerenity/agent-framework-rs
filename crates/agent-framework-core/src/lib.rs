@@ -8,6 +8,12 @@
 //!   automatic function-invocation loop.
 //! - [`agent`] — the [`SupportsAgentRun`](agent::SupportsAgentRun) trait and
 //!   [`Agent`](agent::Agent).
+//! - [`evaluation`] — provider-agnostic evaluation of agents and workflows:
+//!   [`EvalItem`](evaluation::EvalItem)s, the
+//!   [`Evaluator`](evaluation::Evaluator) trait, the API-free
+//!   [`LocalEvaluator`](evaluation::LocalEvaluator) and its checks, and the
+//!   [`EvaluateAgent`](evaluation::EvaluateAgent) /
+//!   [`EvaluateWorkflow`](evaluation::EvaluateWorkflow) runners.
 //! - [`compaction`] — conversation-history compaction strategies and the
 //!   [`Tokenizer`](compaction::Tokenizer) abstraction.
 //! - [`tools`] — executable tools and hosted-tool markers.
@@ -50,6 +56,7 @@ pub mod agent;
 pub mod client;
 pub mod compaction;
 pub mod error;
+pub mod evaluation;
 pub mod history;
 pub mod memory;
 pub mod middleware;
@@ -82,6 +89,10 @@ pub mod prelude {
         SlidingWindow, TokenBudget, Tokenizer, Truncation,
     };
     pub use crate::error::{Error, Result};
+    pub use crate::evaluation::{
+        evaluate_agent, evaluate_workflow, CheckResult, ConversationSplit, EvalCheck, EvalItem,
+        EvalResults, EvaluateAgent, EvaluateWorkflow, Evaluator, ExpectedToolCall, LocalEvaluator,
+    };
     pub use crate::history::{FileHistoryProvider, HistoryProvider, InMemoryHistoryProvider};
     pub use crate::memory::{ContextProvider, SessionContext};
     pub use crate::middleware::{

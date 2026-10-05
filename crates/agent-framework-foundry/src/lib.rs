@@ -38,6 +38,15 @@
 //! # }
 //! ```
 //!
+//! ## Evaluation
+//!
+//! [`FoundryEvals`] is an
+//! [`Evaluator`](agent_framework_core::evaluation::Evaluator) backed by
+//! Foundry's built-in (`builtin.*`) and generated rubric evaluators, run
+//! through the project's OpenAI Evals API; [`evaluate_traces`] and
+//! [`evaluate_foundry_target`] evaluate stored responses / traces and
+//! Foundry-invoked targets. See the [`evals`] module.
+//!
 //! ## Prompt Agents
 //!
 //! [`FoundryAgent`] realizes a Foundry **Prompt Agent** *client-side*: it
@@ -73,10 +82,15 @@
 //! ```
 
 pub mod embeddings;
+pub mod evals;
 pub mod memory;
 mod tool_definition_wire;
 
 pub use embeddings::FoundryEmbeddingClient;
+pub use evals::{
+    evaluate_foundry_target, evaluate_traces, EvaluateFoundryTarget, EvaluateTraces, EvaluatorSpec,
+    FoundryEvals, GeneratedEvaluatorRef,
+};
 pub use memory::FoundryMemoryProvider;
 
 use std::sync::Arc;
@@ -436,6 +450,10 @@ impl SupportsAgentRun for FoundryAgent {
 
     fn create_session(&self) -> AgentSession {
         self.inner.create_session()
+    }
+
+    fn default_tools(&self) -> Vec<ToolDefinition> {
+        self.inner.default_tools()
     }
 }
 

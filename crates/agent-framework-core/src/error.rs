@@ -152,6 +152,15 @@ pub enum Error {
     #[error("configuration error: {0}")]
     Configuration(String),
 
+    /// Evaluation results did not pass: a failed or errored item, a score
+    /// below a threshold, or a run that did not complete.
+    ///
+    /// Returned by the CI-gate assertions on
+    /// [`EvalResults`](crate::evaluation::EvalResults) (`raise_for_status`,
+    /// `assert_score_at_least`, ...). Mirrors upstream's `EvalNotPassedError`.
+    #[error("evaluation not passed: {0}")]
+    EvalNotPassed(String),
+
     /// An underlying JSON error.
     #[error("json error: {0}")]
     Json(#[from] serde_json::Error),

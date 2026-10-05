@@ -39,6 +39,34 @@ nowhere), so a run that paused twice could not be resumed the second time.
 
 ### Added
 
+- **Evaluation** (`agent_framework_core::evaluation`), a port of upstream's
+  provider-agnostic `_evaluation` module. `EvalItem` holds one interaction as
+  a conversation and derives its query and response through a
+  `ConversationSplitter` (`ConversationSplit::LastTurn` by default, `Full`, or
+  any closure); `EvalItem::per_turn_items` splits a multi-turn conversation.
+  The `Evaluator` trait is the provider seam. `LocalEvaluator` runs API-free
+  checks — `keyword_check`, `tool_called_check`, `tool_calls_present`,
+  `tool_call_args_match`, plain closures, and `evaluator` / `async_evaluator`
+  for functions returning a bool, a score (`>= 0.5` passes), a
+  `{score|passed, threshold, reason}` object or a `CheckResult`.
+  `EvaluateAgent` runs an agent over queries (with repetitions, expected
+  outputs and expected tool calls) or scores pre-existing responses;
+  `EvaluateWorkflow` evaluates each participant of a workflow run into
+  `sub_results` plus the overall output. `EvalResults` carries CI gates —
+  `raise_for_status`, `assert_score_at_least`,
+  `assert_dimension_score_at_least`, `assert_no_failed_items` — that fail
+  with the new `Error::EvalNotPassed`. `SupportsAgentRun` gains a
+  `default_tools` method (empty by default; `Agent` and `FoundryAgent` return
+  their build-time tools) so items carry the agent's tool definitions.
+- **Foundry evaluators** (`agent_framework_foundry::evals`): `FoundryEvals`
+  implements `Evaluator` over the project's OpenAI Evals API — built-in
+  `builtin.*` evaluators and pinned/unpinned `GeneratedEvaluatorRef` rubric
+  evaluators, upstream's default set (relevance, coherence, task adherence,
+  plus tool-call accuracy when items carry tools), polling with a timeout,
+  and paged per-item results including rubric dimension scores.
+  `evaluate_traces` (response ids, trace ids or an agent's recent traces)
+  and `evaluate_foundry_target` (Foundry invokes a registered target) cover
+  the Foundry-only paths.
 - **Session stores** (`agent_framework_core::session_store`): the
   `SessionStore` trait plus `InMemorySessionStore` and `FileSessionStore`,
   porting upstream's experimental `SessionStore` / `FileSessionStore`. Reads

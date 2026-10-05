@@ -295,6 +295,19 @@ pub trait SupportsAgentRun: Send + Sync {
     fn create_session(&self) -> AgentSession {
         AgentSession::new()
     }
+
+    /// The tools this agent is configured with by default, independent of
+    /// any one run.
+    ///
+    /// Used by [`evaluation`](crate::evaluation) to attach the agent's
+    /// function-tool definitions to evaluation items — the Rust analogue of
+    /// upstream reading `agent.default_options["tools"]`. The default is
+    /// empty; [`Agent`] returns its build-time tools (tools resolved per run
+    /// from a [`ToolSource`], such as MCP servers, are not included, since
+    /// resolving them may require a live connection).
+    fn default_tools(&self) -> Vec<ToolDefinition> {
+        Vec::new()
+    }
 }
 
 /// The primary concrete agent: pairs a chat client with instructions, default
@@ -1008,6 +1021,10 @@ impl SupportsAgentRun for Agent {
     }
     fn name(&self) -> Option<&str> {
         self.name.as_deref()
+    }
+
+    fn default_tools(&self) -> Vec<ToolDefinition> {
+        self.chat_options.tools.clone()
     }
 
     fn create_session(&self) -> AgentSession {

@@ -198,6 +198,7 @@ pub fn error_type(err: &Error) -> String {
         Error::Workflow(_) => "workflow",
         Error::AdditionItemMismatch(_) => "addition_item_mismatch",
         Error::Configuration(_) => "configuration",
+        Error::EvalNotPassed(_) => "eval_not_passed",
         Error::Json(_) => "json",
         Error::Other(_) => "other",
     }
