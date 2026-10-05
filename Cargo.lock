@@ -195,13 +195,19 @@ name = "agent-framework-declarative"
 version = "0.9.0"
 dependencies = [
  "agent-framework-core",
+ "agent-framework-mcp",
  "async-trait",
  "futures",
+ "hmac",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2",
  "thiserror",
  "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

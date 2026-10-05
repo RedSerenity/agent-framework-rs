@@ -310,11 +310,49 @@ impl DeclarativeLoader {
 
     // --- workflows -------------------------------------------------------
 
-    /// Parse and build a [`Workflow`] from a YAML workflow spec, resolving
-    /// participant/node agents from `agents`.
+    /// Parse and build a [`Workflow`] from a YAML workflow document.
+    ///
+    /// Dispatches on the document's shape:
+    ///
+    /// * documents with `trigger` or `actions` are **upstream-format**
+    ///   declarative workflows (PowerFx actions) and are built by a
+    ///   [`WorkflowFactory`](crate::flow::WorkflowFactory) pre-populated by
+    ///   [`Self::workflow_factory`]; `${VAR}` interpolation is not applied to
+    ///   them (upstream uses `=Env.VAR`);
+    /// * anything else is this crate's Rust-native [`WorkflowSpec`].
+    ///
+    /// Agents are resolved from `agents`; upstream-format workflows may also
+    /// define agents inline under `agents:`, built with this loader.
     pub fn load_workflow(&self, yaml: &str, agents: &AgentRegistry) -> Result<Workflow> {
+        let raw = crate::flow::parse_yaml_raw(yaml)?;
+        let def = crate::flow::yaml_to_json(raw.clone());
+        if crate::flow::is_upstream_workflow(&def) {
+            return self
+                .workflow_factory(agents)
+                .build(&def, Some(&raw), None, &|def, base| {
+                    crate::flow::agent_from_definition(self, def, base)
+                });
+        }
         let spec = self.load_workflow_spec(yaml)?;
         self.build_workflow(&spec, agents)
+    }
+
+    /// A [`WorkflowFactory`](crate::flow::WorkflowFactory) for
+    /// upstream-format workflows, pre-populated with `agents` and every
+    /// executable tool in this loader's [`ToolRegistry`] (for
+    /// `InvokeFunctionTool`). Add HTTP/MCP handlers, `Env` configuration,
+    /// checkpointing, or limits on the returned factory.
+    pub fn workflow_factory(&self, agents: &AgentRegistry) -> crate::flow::WorkflowFactory {
+        let mut factory = crate::flow::WorkflowFactory::new();
+        for (id, agent) in agents.iter() {
+            factory.register_agent(id, agent.clone());
+        }
+        for (name, tool) in self.tools.iter() {
+            if let Some(exec) = &tool.executor {
+                factory = factory.with_tool(name, exec.clone());
+            }
+        }
+        factory
     }
 
     /// Build a [`Workflow`] from an already-parsed [`WorkflowSpec`].

@@ -83,3 +83,114 @@ impl ChatClient for MockClient {
 pub fn mock_agent(name: &str, text: &str) -> Agent {
     Agent::builder(MockClient::always(text)).name(name).build()
 }
+
+/// Read an upstream fixture under `tests/fixtures/upstream/`.
+pub fn fixture(path: &str) -> String {
+    let full = format!(
+        "{}/tests/fixtures/upstream/{path}",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    std::fs::read_to_string(&full).unwrap_or_else(|e| panic!("{full}: {e}"))
+}
+
+/// The declarative variables of a run.
+pub async fn vars(run: &WorkflowRun) -> serde_json::Map<String, serde_json::Value> {
+    agent_framework_declarative::flow::final_state(&run.shared_state())
+        .await
+        .expect("declarative state present")
+}
+
+/// The run's outputs as strings.
+pub fn texts(run: &WorkflowRun) -> Vec<String> {
+    run.outputs()
+        .into_iter()
+        .map(|v| match v {
+            serde_json::Value::String(s) => s,
+            other => other.to_string(),
+        })
+        .collect()
+}
+
+/// The single pending request: `(request_id, payload)`.
+pub fn pending(run: &WorkflowRun) -> (String, serde_json::Value) {
+    let p = run.pending_requests();
+    assert_eq!(p.len(), 1, "expected one pending request, got {p:?}");
+    (p[0].request_id.clone(), p[0].request_data.clone())
+}
+
+/// An agent that replies with scripted texts in order (repeating the last),
+/// recording every message list it was asked to answer.
+pub struct ScriptedAgent {
+    name: String,
+    replies: Mutex<std::collections::VecDeque<String>>,
+    /// Every message list the agent received.
+    pub calls: Arc<Mutex<Vec<Vec<Message>>>>,
+    fail: bool,
+}
+
+impl ScriptedAgent {
+    /// An agent named `name` replying with `replies` in order.
+    pub fn new(name: &str, replies: &[&str]) -> Arc<Self> {
+        Arc::new(Self {
+            name: name.to_string(),
+            replies: Mutex::new(replies.iter().map(|s| s.to_string()).collect()),
+            calls: Arc::new(Mutex::new(Vec::new())),
+            fail: false,
+        })
+    }
+
+    /// An agent whose every run fails.
+    pub fn failing(name: &str) -> Arc<Self> {
+        Arc::new(Self {
+            name: name.to_string(),
+            replies: Mutex::new(Default::default()),
+            calls: Arc::new(Mutex::new(Vec::new())),
+            fail: true,
+        })
+    }
+
+    /// The text of the last message of each call.
+    pub fn last_inputs(&self) -> Vec<String> {
+        self.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|c| c.last().map(Message::text).unwrap_or_default())
+            .collect()
+    }
+
+    /// How many times the agent ran.
+    pub fn call_count(&self) -> usize {
+        self.calls.lock().unwrap().len()
+    }
+}
+
+#[async_trait]
+impl SupportsAgentRun for ScriptedAgent {
+    async fn run(
+        &self,
+        messages: Vec<Message>,
+        _session: Option<&mut AgentSession>,
+    ) -> Result<AgentResponse> {
+        self.calls.lock().unwrap().push(messages);
+        if self.fail {
+            return Err(Error::AgentExecution("scripted failure".into()));
+        }
+        let text = {
+            let mut replies = self.replies.lock().unwrap();
+            if replies.len() > 1 {
+                replies.pop_front().unwrap()
+            } else {
+                replies.front().cloned().unwrap_or_default()
+            }
+        };
+        Ok(AgentResponse {
+            messages: vec![Message::new(Role::new("assistant"), text)],
+            ..Default::default()
+        })
+    }
+
+    fn id(&self) -> &str {
+        &self.name
+    }
+}

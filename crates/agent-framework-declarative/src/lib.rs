@@ -66,7 +66,9 @@ pub mod agent;
 pub mod condition;
 pub mod env;
 pub mod error;
+pub mod flow;
 pub mod loader;
+pub mod powerfx;
 pub mod registry;
 pub mod workflow;
 
