@@ -39,6 +39,50 @@ nowhere), so a run that paused twice could not be resumed the second time.
 
 ### Added
 
+- **Upstream-format declarative workflows** (`declarative` crate, new
+  `flow` module). `WorkflowFactory` — and `DeclarativeLoader::load_workflow`,
+  which now dispatches on the document's shape — builds runnable workflows
+  from the YAML upstream Python and .NET accept: `kind: Workflow` with a
+  `trigger` (or top-level `actions`) whose `=` values are PowerFx. Actions
+  compile onto the core graph engine with upstream's builder semantics
+  (first-match `If`/`ConditionGroup` evaluators, `Foreach` init/next/exit
+  nodes, `GotoAction` back edges, `BreakLoop`/`ContinueLoop`, terminators,
+  `maxTurns`) and run with upstream's scoped state (`Workflow.Inputs`
+  read-only, `Workflow.Outputs`, `Local`, `System`, `Agent`,
+  `Conversation`, custom namespaces, configuration-gated `Env`). Every
+  upstream action has an executor: `SetValue`/`SetVariable`/
+  `SetTextVariable`/`SetMultipleVariables`/`ResetVariable`/
+  `ClearAllVariables`, `SendActivity`, `ParseValue`, `EditTable`/
+  `EditTableV2`, `CreateConversation`, `End*`/`Cancel*`, `InvokeAzureAgent`
+  (any registered `SupportsAgentRun`; external-loop human-in-the-loop;
+  `responseObject` JSON extraction), `Question`/`RequestExternalInput`
+  (pausing through the core request/response API), `InvokeFunctionTool`
+  (optional approval), `HttpRequestAction` (an `HttpRequestHandler`; a
+  reqwest-backed default behind the new `http` feature) and `InvokeMcpTool`
+  (an `McpToolHandler` with HMAC header-bound approval; an
+  `agent-framework-mcp`-backed default behind the new `mcp` feature), plus
+  the .NET-only `AddConversationMessage`/`CopyConversationMessages`/
+  `RetrieveConversationMessage(s)` and the .NET field shapes of `Foreach`,
+  `EditTable(V2)` and `SetTextVariable`. Upstream sample workflows
+  (DeepResearch, CustomerSupport, StudentTeacher, MathChat, Marketing,
+  human-in-the-loop, function tools, HTTP, MCP) run offline as test
+  fixtures. The Rust-native `WorkflowSpec` keeps working unchanged.
+- **A PowerFx expression interpreter** (`declarative::powerfx`): lexer,
+  precedence-climbing parser and evaluator for the subset declarative
+  workflows use — records, tables, interpolated strings, comments, PowerFx
+  operator precedence including `in`/`exactin`, ~70 functions (logical,
+  text, table, math, JSON) and upstream's `MessageText`/`UserMessage`/
+  `AgentMessage` custom functions. Unknown functions are errors, never
+  silent. Expression length (10 000, .NET's default) and nesting depth are
+  bounded, and upstream's `_powerfx_limits.py` state budget (depth 64,
+  10 000 nodes, 1 MiB of text) is enforced on every state write and
+  evaluation.
+- **Declarative agent schema parity**: `template` (`format`/`parser`),
+  upstream's list-form `properties`, `additionalProperties: false` on nested
+  object schemas with empty `enum`s dropped, and `=` PowerFx evaluation of
+  agent string fields with `DeclarativeLoader::with_safe_mode(false)`
+  gating `=Env.NAME` (upstream `safe_mode`). `AgentSpec` gains a
+  `template` field, so a struct literal for it needs one.
 - **`agent-framework-harness`** — a new crate porting upstream's harness
   agent (Python `agent_framework._harness`, `create_harness_agent`; .NET
   `Microsoft.Agents.AI.Harness`), also reachable as

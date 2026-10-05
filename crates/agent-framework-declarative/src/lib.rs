@@ -12,21 +12,33 @@
 //! agents, then call [`DeclarativeLoader::load_agent`] /
 //! [`DeclarativeLoader::load_workflow`].
 //!
-//! ## SupportsAgentRun specs
+//! ## Agent specs
 //!
-//! SupportsAgentRun specs follow the official schema vocabulary (`kind: Prompt`, `name`,
+//! Agent specs follow the official schema vocabulary (`kind: Prompt`, `name`,
 //! `instructions`, `model.id`/`provider`/`apiType`/`connection`/`options`,
-//! `tools`, `outputSchema`, …). String fields support `${VAR}` /
-//! `${VAR:-default}` environment interpolation.
+//! `tools`, `outputSchema`, `template`, …). String fields support `${VAR}` /
+//! `${VAR:-default}` environment interpolation, and — like upstream — `=`
+//! PowerFx expressions in identity/connection/instruction fields (with
+//! `=Env.NAME` gated behind [`DeclarativeLoader::with_safe_mode`]).
 //!
 //! ## Workflow specs
 //!
-//! The upstream declarative *workflow* schema is a Power Platform / Copilot
-//! Studio imperative DSL that does not map onto this port's graph engine. This
-//! crate therefore defines a documented Rust-native [`WorkflowSpec`] that drives
-//! the existing `WorkflowBuilder` and orchestration builders — either via
-//! orchestration shorthand (`type: sequential | concurrent | group_chat |
-//! handoff`) or an explicit node/edge graph. See [`workflow`] for details.
+//! [`DeclarativeLoader::load_workflow`] accepts two document shapes and
+//! dispatches on which one it is given:
+//!
+//! * **Upstream declarative workflows** — the format the Python and .NET
+//!   Agent Framework accept: `kind: Workflow` with a `trigger` (or top-level
+//!   `actions`) of `SetVariable`, `If`, `ConditionGroup`, `Foreach`,
+//!   `GotoAction`, `InvokeAzureAgent`, `Question`, `InvokeFunctionTool`,
+//!   `HttpRequestAction`, `InvokeMcpTool`, … actions whose `=` values are
+//!   PowerFx expressions. They compile onto the core graph engine with
+//!   upstream's semantics; see [`flow`] (and [`flow::WorkflowFactory`] for
+//!   HTTP/MCP handlers, `Env` configuration, checkpointing and limits) and
+//!   the [`powerfx`] interpreter for the supported expression language.
+//! * **Rust-native [`WorkflowSpec`]** — this crate's own schema that drives
+//!   the `WorkflowBuilder` and orchestration builders directly, via
+//!   orchestration shorthand (`type: sequential | concurrent | group_chat |
+//!   handoff`) or an explicit node/edge graph. See [`workflow`].
 //!
 //! ## Example
 //!
@@ -66,16 +78,19 @@ pub mod agent;
 pub mod condition;
 pub mod env;
 pub mod error;
+pub mod flow;
 pub mod loader;
+pub mod powerfx;
 pub mod registry;
 pub mod workflow;
 
 pub use agent::{
     AgentSpec, ApprovalModeDetail, ApprovalModeSpec, ConnectionSpec, ModelOptions, ModelSpec,
-    PropertySchema, PropertySpec, ToolSpec,
+    PropertySchema, PropertySpec, TemplateFormatSpec, TemplateParserSpec, TemplateSpec, ToolSpec,
 };
 pub use env::{EnvSource, ProcessEnv};
 pub use error::{DeclarativeError, Result};
+pub use flow::WorkflowFactory;
 pub use loader::DeclarativeLoader;
 pub use registry::{
     AgentRegistry, ChatClientFactory, ClientFactoryResult, FactoryError, PredicateRegistry,

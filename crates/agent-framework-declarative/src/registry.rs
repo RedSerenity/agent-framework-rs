@@ -157,6 +157,11 @@ impl ToolRegistry {
     pub(crate) fn get(&self, name: &str) -> Option<&ToolDefinition> {
         self.tools.get(name)
     }
+
+    /// Iterate over `(registry key, tool)` pairs.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &ToolDefinition)> {
+        self.tools.iter().map(|(k, v)| (k.as_str(), v))
+    }
 }
 
 /// A registry of pre-built agents, referenced by id from a
@@ -186,6 +191,11 @@ impl AgentRegistry {
     pub fn with(mut self, id: impl Into<String>, agent: Arc<dyn SupportsAgentRun>) -> Self {
         self.register(id, agent);
         self
+    }
+
+    /// Iterate over `(id, agent)` pairs.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &Arc<dyn SupportsAgentRun>)> {
+        self.agents.iter().map(|(k, v)| (k.as_str(), v))
     }
 
     /// Look up an agent by id.

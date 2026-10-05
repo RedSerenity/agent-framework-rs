@@ -42,6 +42,7 @@ pub struct DeclarativeLoader {
     tools: ToolRegistry,
     predicates: PredicateRegistry,
     env: Box<dyn EnvSource + Send + Sync>,
+    safe_mode: bool,
 }
 
 impl Default for DeclarativeLoader {
@@ -51,6 +52,106 @@ impl Default for DeclarativeLoader {
             tools: ToolRegistry::new(),
             predicates: PredicateRegistry::new(),
             env: Box::new(ProcessEnv),
+            safe_mode: true,
+        }
+    }
+}
+
+/// Agent-spec keys whose string values upstream evaluates as PowerFx when
+/// they start with `=` (`_try_powerfx_eval` in `_models.py`).
+const POWERFX_AGENT_FIELDS: &[&str] = &[
+    "name",
+    "input",
+    "kind",
+    "description",
+    "displayName",
+    "authenticationMode",
+    "usageDescription",
+    "target",
+    "endpoint",
+    "apiKey",
+    "key",
+    "id",
+    "provider",
+    "apiType",
+    "ranker",
+    "serverName",
+    "serverDescription",
+    "url",
+    "specification",
+    "instructions",
+    "additionalInstructions",
+];
+
+/// Subtrees upstream never evaluates (free-form values).
+const POWERFX_OPAQUE_FIELDS: &[&str] = &[
+    "metadata",
+    "options",
+    "additionalProperties",
+    "examples",
+    "default",
+    "example",
+    "enum",
+];
+
+/// Evaluate `=` PowerFx values in agent-spec string fields, keeping the
+/// original text when evaluation fails (upstream semantics). `Env.NAME` is
+/// bound from `env` only when `safe_mode` is off.
+fn eval_powerfx_fields(value: &mut serde_yaml::Value, safe_mode: bool, env: &dyn EnvSource) {
+    use serde_yaml::Value as Y;
+    match value {
+        Y::Mapping(map) => {
+            for (k, v) in map.iter_mut() {
+                let key = k.as_str().unwrap_or_default();
+                if POWERFX_OPAQUE_FIELDS.contains(&key) {
+                    continue;
+                }
+                if let Y::String(s) = v {
+                    if POWERFX_AGENT_FIELDS.contains(&key) && s.starts_with('=') {
+                        if let Some(new) = eval_agent_expression(s, safe_mode, env) {
+                            *v = new;
+                        }
+                    }
+                    continue;
+                }
+                eval_powerfx_fields(v, safe_mode, env);
+            }
+        }
+        Y::Sequence(items) => {
+            for item in items {
+                eval_powerfx_fields(item, safe_mode, env);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn eval_agent_expression(
+    expr: &str,
+    safe_mode: bool,
+    env: &dyn EnvSource,
+) -> Option<serde_yaml::Value> {
+    use crate::powerfx::{Engine, Record, Value};
+    let mut symbols = std::collections::HashMap::new();
+    if !safe_mode {
+        let mut record = Record::new();
+        let names = crate::flow::discover_env_references(&Value::Text(expr.to_string()).to_json());
+        for name in names {
+            if let Some(v) = env.get(&name) {
+                record.insert(name, Value::Text(v));
+            }
+        }
+        symbols.insert("Env".to_string(), Value::Record(record));
+    }
+    match Engine::new().eval(&expr[1..], &symbols) {
+        Ok(Value::Blank) => Some(serde_yaml::Value::Null),
+        Ok(Value::Text(t)) => Some(serde_yaml::Value::String(t)),
+        Ok(Value::Boolean(b)) => Some(serde_yaml::Value::String(b.to_string())),
+        Ok(Value::Number(n)) => Some(serde_yaml::Value::String(crate::powerfx::format_number(n))),
+        Ok(other) => Some(serde_yaml::Value::String(other.to_json().to_string())),
+        Err(e) => {
+            tracing::debug!("PowerFx evaluation failed for an agent field: {e}");
+            None
         }
     }
 }
@@ -111,8 +212,27 @@ impl DeclarativeLoader {
     }
 
     /// Parse an [`AgentSpec`] from YAML with environment interpolation applied.
+    ///
+    /// Like upstream's `_try_powerfx_eval`, string fields such as `name`,
+    /// `description`, `instructions`, `model.id`, connection endpoints/keys,
+    /// and tool `url`s that start with `=` are evaluated as PowerFx (e.g.
+    /// `="Assistant " & "One"`); a failing expression is kept verbatim.
+    /// `=Env.NAME` resolves only when [`Self::with_safe_mode`] is `false`.
+    /// Non-text results are rendered as text (`true`, `42`).
     pub fn load_agent_spec(&self, yaml: &str) -> Result<AgentSpec> {
-        self.parse_interpolated(yaml)
+        let mut value: serde_yaml::Value =
+            serde_yaml::from_str(yaml).map_err(|e| DeclarativeError::Parse(e.to_string()))?;
+        crate::env::interpolate_value(&mut value, self.env.as_ref())?;
+        eval_powerfx_fields(&mut value, self.safe_mode, self.env.as_ref());
+        serde_yaml::from_value(value).map_err(|e| DeclarativeError::Parse(e.to_string()))
+    }
+
+    /// Upstream's `safe_mode` (default `true`): when `false`, `=Env.NAME`
+    /// PowerFx expressions in agent specs read this loader's
+    /// [`EnvSource`]. Only enable it for trusted YAML.
+    pub fn with_safe_mode(mut self, safe_mode: bool) -> Self {
+        self.safe_mode = safe_mode;
+        self
     }
 
     /// Parse a [`WorkflowSpec`] from YAML with environment interpolation applied.
@@ -310,11 +430,49 @@ impl DeclarativeLoader {
 
     // --- workflows -------------------------------------------------------
 
-    /// Parse and build a [`Workflow`] from a YAML workflow spec, resolving
-    /// participant/node agents from `agents`.
+    /// Parse and build a [`Workflow`] from a YAML workflow document.
+    ///
+    /// Dispatches on the document's shape:
+    ///
+    /// * documents with `trigger` or `actions` are **upstream-format**
+    ///   declarative workflows (PowerFx actions) and are built by a
+    ///   [`WorkflowFactory`](crate::flow::WorkflowFactory) pre-populated by
+    ///   [`Self::workflow_factory`]; `${VAR}` interpolation is not applied to
+    ///   them (upstream uses `=Env.VAR`);
+    /// * anything else is this crate's Rust-native [`WorkflowSpec`].
+    ///
+    /// Agents are resolved from `agents`; upstream-format workflows may also
+    /// define agents inline under `agents:`, built with this loader.
     pub fn load_workflow(&self, yaml: &str, agents: &AgentRegistry) -> Result<Workflow> {
+        let raw = crate::flow::parse_yaml_raw(yaml)?;
+        let def = crate::flow::yaml_to_json(raw.clone());
+        if crate::flow::is_upstream_workflow(&def) {
+            return self
+                .workflow_factory(agents)
+                .build(&def, Some(&raw), None, &|def, base| {
+                    crate::flow::agent_from_definition(self, def, base)
+                });
+        }
         let spec = self.load_workflow_spec(yaml)?;
         self.build_workflow(&spec, agents)
+    }
+
+    /// A [`WorkflowFactory`](crate::flow::WorkflowFactory) for
+    /// upstream-format workflows, pre-populated with `agents` and every
+    /// executable tool in this loader's [`ToolRegistry`] (for
+    /// `InvokeFunctionTool`). Add HTTP/MCP handlers, `Env` configuration,
+    /// checkpointing, or limits on the returned factory.
+    pub fn workflow_factory(&self, agents: &AgentRegistry) -> crate::flow::WorkflowFactory {
+        let mut factory = crate::flow::WorkflowFactory::new();
+        for (id, agent) in agents.iter() {
+            factory.register_agent(id, agent.clone());
+        }
+        for (name, tool) in self.tools.iter() {
+            if let Some(exec) = &tool.executor {
+                factory = factory.with_tool(name, exec.clone());
+            }
+        }
+        factory
     }
 
     /// Build a [`Workflow`] from an already-parsed [`WorkflowSpec`].

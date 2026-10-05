@@ -52,6 +52,111 @@ pub struct AgentSpec {
     /// A structured-output schema, mapped to the chat `response_format`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_schema: Option<PropertySchema>,
+    /// The prompt template (`format`/`parser`), parsed for schema parity
+    /// with upstream's `PromptAgent.template` but not interpreted (upstream's
+    /// loader does not use it either).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template: Option<TemplateSpec>,
+}
+
+/// The `template` block of a prompt agent (upstream `Template`).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TemplateSpec {
+    /// The template format (`kind`, `strict`, `options`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<TemplateFormatSpec>,
+    /// The template parser (`kind`, `options`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parser: Option<TemplateParserSpec>,
+}
+
+/// A template `format` (upstream `Format`).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TemplateFormatSpec {
+    /// The format kind (e.g. `mustache`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// Whether the format is strict.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub strict: bool,
+    /// Format-specific options.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<BTreeMap<String, JsonValue>>,
+}
+
+/// A template `parser` (upstream `Parser`).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TemplateParserSpec {
+    /// The parser kind (e.g. `prompty`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// Parser-specific options.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<BTreeMap<String, JsonValue>>,
+}
+
+/// Accept `properties` either as a map (`{name: {...}}`) or as upstream's
+/// list form (`[{name: ..., kind: ...}]`).
+fn properties_map_or_list<'de, D>(
+    d: D,
+) -> std::result::Result<BTreeMap<String, PropertySpec>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+    let raw = JsonValue::deserialize(d)?;
+    properties_from_json(raw).map_err(D::Error::custom)
+}
+
+fn optional_properties_map_or_list<'de, D>(
+    d: D,
+) -> std::result::Result<Option<BTreeMap<String, PropertySpec>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+    let raw = Option::<JsonValue>::deserialize(d)?;
+    match raw {
+        None | Some(JsonValue::Null) => Ok(None),
+        Some(v) => properties_from_json(v).map(Some).map_err(D::Error::custom),
+    }
+}
+
+fn properties_from_json(
+    raw: JsonValue,
+) -> std::result::Result<BTreeMap<String, PropertySpec>, String> {
+    match raw {
+        JsonValue::Null => Ok(BTreeMap::new()),
+        JsonValue::Object(map) => map
+            .into_iter()
+            .map(|(k, v)| {
+                serde_json::from_value::<PropertySpec>(v)
+                    .map(|p| (k.clone(), p))
+                    .map_err(|e| format!("property {k:?}: {e}"))
+            })
+            .collect(),
+        JsonValue::Array(items) => items
+            .into_iter()
+            .map(|item| {
+                let JsonValue::Object(mut m) = item else {
+                    return Err("list-form properties must be mappings with a 'name'".to_string());
+                };
+                let name = match m.remove("name") {
+                    Some(JsonValue::String(n)) => n,
+                    _ => return Err("list-form property is missing 'name'".to_string()),
+                };
+                serde_json::from_value::<PropertySpec>(JsonValue::Object(m))
+                    .map(|p| (name.clone(), p))
+                    .map_err(|e| format!("property {name:?}: {e}"))
+            })
+            .collect(),
+        other => Err(format!(
+            "'properties' must be a mapping or a list, found {other}"
+        )),
+    }
 }
 
 impl AgentSpec {
@@ -334,8 +439,13 @@ pub struct PropertySchema {
     /// Illustrative examples.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub examples: Vec<JsonValue>,
-    /// Named properties (a map of property-name to its definition).
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    /// Named properties (a map of property-name to its definition). Upstream's
+    /// list form (`[{name: x, kind: string}]`) is accepted on input.
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "properties_map_or_list"
+    )]
     pub properties: BTreeMap<String, PropertySpec>,
 }
 
@@ -395,8 +505,12 @@ pub struct PropertySpec {
     /// The element schema for `array` properties.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub items: Option<Box<PropertySpec>>,
-    /// Nested properties for `object` properties.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Nested properties for `object` properties (map or upstream list form).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_properties_map_or_list"
+    )]
     pub properties: Option<BTreeMap<String, PropertySpec>>,
 }
 
@@ -413,7 +527,8 @@ impl PropertySpec {
         if let Some(default) = &self.default {
             m.insert("default".into(), default.clone());
         }
-        if let Some(en) = &self.enum_values {
+        // Upstream drops empty `enum` placeholders.
+        if let Some(en) = self.enum_values.as_ref().filter(|e| !e.is_empty()) {
             m.insert("enum".into(), JsonValue::Array(en.clone()));
         }
         if let Some(items) = &self.items {
@@ -432,6 +547,13 @@ impl PropertySpec {
             if !required.is_empty() {
                 m.insert("required".into(), JsonValue::Array(required));
             }
+        }
+        // Upstream's `_normalize_schema_node`: strict structured outputs need
+        // `additionalProperties: false` on every nested object node (chat
+        // clients only add it at the root).
+        if self.kind.as_deref() == Some("object") {
+            m.entry("additionalProperties")
+                .or_insert(JsonValue::Bool(false));
         }
         JsonValue::Object(m)
     }

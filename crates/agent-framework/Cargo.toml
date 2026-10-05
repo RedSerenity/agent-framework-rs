@@ -25,6 +25,9 @@ azure = ["dep:agent-framework-azure"]
 mcp = ["dep:agent-framework-mcp"]
 a2a = ["dep:agent-framework-a2a"]
 declarative = ["dep:agent-framework-declarative"]
+# Default HttpRequestAction / InvokeMcpTool handlers for declarative workflows.
+declarative-http = ["declarative", "agent-framework-declarative/http"]
+declarative-mcp = ["declarative", "agent-framework-declarative/mcp"]
 hosting = ["dep:agent-framework-hosting"]
 hosting-mcp = ["dep:agent-framework-hosting-mcp"]
 redis = ["dep:agent-framework-redis"]
@@ -56,6 +59,8 @@ full = [
     "mcp",
     "a2a",
     "declarative",
+    "declarative-http",
+    "declarative-mcp",
     "hosting",
     "hosting-mcp",
     "redis",

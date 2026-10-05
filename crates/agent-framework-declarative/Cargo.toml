@@ -17,6 +17,22 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = "0.9"
 thiserror = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+hmac = "0.12"
+sha2 = "0.10"
+reqwest = { workspace = true, optional = true }
+agent-framework-mcp = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+
+[features]
+default = []
+## `DefaultHttpRequestHandler` (reqwest-based) for `HttpRequestAction`.
+http = ["dep:reqwest"]
+## `DefaultMcpToolHandler` (agent-framework-mcp streamable HTTP) for `InvokeMcpTool`.
+mcp = ["dep:agent-framework-mcp", "dep:reqwest", "dep:tokio"]
 
 [dev-dependencies]
 tokio = { workspace = true }

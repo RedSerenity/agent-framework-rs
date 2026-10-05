@@ -1,10 +1,11 @@
 //! Shell-style environment-variable interpolation for spec string fields.
 //!
-//! Every string in a parsed spec is passed through [`interpolate`], which
-//! expands `${VAR}` and `${VAR:-default}` placeholders. This is the convention
-//! requested for this port; note the upstream Python/.NET declarative packages
-//! instead evaluate PowerFx `=Env.VAR` / `=` expressions, which this crate does
-//! **not** interpret (such values pass through untouched).
+//! Every string in a parsed agent or Rust-native workflow spec is passed
+//! through [`interpolate`], which expands `${VAR}` and `${VAR:-default}`
+//! placeholders. This is a convention of this port; upstream instead
+//! evaluates PowerFx `=Env.VAR` expressions, which this crate also supports
+//! (agent fields with safe mode off, and the `Env` scope of upstream-format
+//! workflows — which are not `${}`-interpolated).
 //!
 //! * `${VAR}` — expands to the value of `VAR`; errors if `VAR` is unset.
 //! * `${VAR:-default}` — expands to `VAR` if set (and non-empty per POSIX
