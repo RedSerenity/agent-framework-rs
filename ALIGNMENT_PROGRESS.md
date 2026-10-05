@@ -6,7 +6,7 @@ the `68136ee` heading refer to that document. Every item recorded as landed was
 independently verified (full workspace build + `cargo test` + clippy
 `--all-targets` + rustfmt, all green) before commit.
 
-**Current upstream baseline: `dc8e226` (2026-09-28).** Sections are newest
+**Current upstream baseline: `dc8e226` (2026-09-28); feature parity push checked against `b9d24c8` (2026-10-05).** Sections are newest
 first; each records the upstream revision it was checked against.
 
 ## Stateful Responses hosting (checked against `b9d24c8`, 2026-10-05)
@@ -43,15 +43,39 @@ failing**), clippy `--all-targets --all-features -D warnings`, `cargo fmt
 --check`, `cargo doc` with `-D warnings`. The workflow-resume tests were
 probed by removing the runtime storage override: three fail.
 
-### Still open from the same re-audit
+### Landed later in the same parity push
 
-MCP server hosting and MCP `resources/*`; the harness, agent hooks and
-evaluation modules; upstream-compatible (PowerFx) declarative workflows;
-and the unported connector packages (Postgres, Qdrant, MongoDB, DuckDB, SQL
-Server, DocumentDB, Valkey, Cosmos memory, Content Understanding), sandboxes
-(Hyperlight, Monty, shell tools), `claude`, `typesafe`, `chatkit`,
-`hosting-telegram`, `foundry_hosting`, functional workflows, OpenAI
-computer-use / shell tools, and DevUI's `/v1/conversations` API.
+Each merged with the full workspace green (`cargo test --workspace
+--all-features`, clippy `-D warnings`, fmt):
+
+- **MCP hosting** — new `agent-framework-hosting-mcp` crate (`AgentMcpTool`,
+  `WorkflowMcpTool`, `mcp_to_run`/`mcp_from_run`, minimal stdio +
+  streamable-HTTP `McpServer`).
+- **MCP client parity with upstream `MCPTool`** — prefixes, prompts as
+  tools, raw-name matching with ambiguity errors, result-content modes,
+  argument filtering, `_meta` echo, progressive disclosure, logging,
+  `SamplingGuard` (deny by default), reconnect-and-retry. (Correction to the
+  re-audit: upstream's client has no `resources/*` either.)
+- **Evaluation** (core `evaluation`, Foundry evaluators).
+- **Agent hooks** (core `agent_hooks`, AGENT-HOOKS-0.1).
+- **Harness agent** — new `agent-framework-harness` crate; also fixed
+  approved tool calls re-executing when history replays an approval.
+- **Upstream-format declarative workflows** — PowerFx subset interpreter and
+  every upstream action kind.
+- **Redis vector store, Redis/Valkey history providers, Qdrant** (live-tested
+  against Redis, Redis Stack and Qdrant).
+
+### Still open
+
+MCP tasks, per-run MCP `header_provider`, OTel context in `_meta`;
+`security.py` (information-flow labels); functional workflows; OpenAI
+computer-use / shell tools; the `claude` and `typesafe` packages; sandboxes
+(Hyperlight, Monty, shell tools, LocalCodeAct); hosting for Telegram,
+ChatKit and Foundry; DevUI's conversations API and React UI; A2A server push
+notifications / resubscribe; `lab`; and the ~130 upstream commits after
+`dc8e226`. Connector ports for Postgres, SQL Server, MongoDB, DocumentDB,
+DuckDB, Cosmos memory and Content Understanding were in flight when this
+push stopped — see the CHANGELOG for which landed.
 
 ## Tool-call serialization on both hosting surfaces (same upstream baseline, `dc8e226`)
 
