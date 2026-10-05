@@ -32,6 +32,7 @@ mem0 = ["dep:agent-framework-mem0"]
 foundry = ["dep:agent-framework-foundry"]
 azure-ai-search = ["dep:agent-framework-azure-ai-search"]
 cosmos = ["dep:agent-framework-cosmos"]
+qdrant = ["dep:agent-framework-qdrant"]
 copilotstudio = ["dep:agent-framework-copilotstudio"]
 purview = ["dep:agent-framework-purview"]
 # GenAI metrics (token-usage / operation-duration / function-invocation
@@ -62,6 +63,7 @@ full = [
     "foundry",
     "azure-ai-search",
     "cosmos",
+    "qdrant",
     "copilotstudio",
     "purview",
 ]
@@ -87,6 +89,7 @@ agent-framework-mem0 = { workspace = true, optional = true }
 agent-framework-foundry = { workspace = true, optional = true }
 agent-framework-azure-ai-search = { workspace = true, optional = true }
 agent-framework-cosmos = { workspace = true, optional = true }
+agent-framework-qdrant = { workspace = true, optional = true }
 agent-framework-copilotstudio = { workspace = true, optional = true }
 agent-framework-purview = { workspace = true, optional = true }
 

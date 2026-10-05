@@ -87,8 +87,8 @@ parity with the Python and .NET implementations.
 - **Vector stores** — a provider-agnostic `VectorStore`/`VectorCollection`
   pair with a **portable filter** (`Filter::gte("year", 2020)`) each connector
   translates into its own dialect, so the same retrieval code runs against the
-  in-memory store in a test and against Azure AI Search or Azure Cosmos DB in
-  production. `VectorCollectionContextProvider` turns any of them into agent
+  in-memory store in a test and against Azure AI Search, Azure Cosmos DB,
+  Redis (RediSearch) or Qdrant in production. `VectorCollectionContextProvider` turns any of them into agent
   tools, with writes gated on approval by default.
 - **Compliance** — Purview middleware evaluates every content item of each
   prompt and response against Microsoft Graph `processContent` — text,
@@ -113,9 +113,10 @@ parity with the Python and .NET implementations.
 | [`agent-framework-declarative`](crates/agent-framework-declarative) | Declarative YAML/JSON agents and workflows with provider/tool registries. |
 | [`agent-framework-hosting`](crates/agent-framework-hosting) | HTTP serving (axum): DevUI-style API + embedded debug UI, A2A, AG-UI, OpenAI-compatible; stateful `/v1/responses` (`previous_response_id`, conversations, workflow resume). |
 | [`agent-framework-hosting-mcp`](crates/agent-framework-hosting-mcp) | Agents and workflows as MCP tools, with a minimal stdio / streamable-HTTP MCP server. |
-| [`agent-framework-redis`](crates/agent-framework-redis) | Redis-backed `ChatMessageStore` and long-term-memory `ContextProvider` (RediSearch BM25). |
+| [`agent-framework-redis`](crates/agent-framework-redis) | Redis-backed history providers (`RedisHistoryProvider` with scoped keys, legacy `RedisChatMessageStore`, and the Valkey port `ValkeyChatHistoryProvider`), long-term-memory `ContextProvider` (RediSearch BM25), and a RediSearch HASH/JSON vector store. |
 | [`agent-framework-mem0`](crates/agent-framework-mem0) | Mem0 hosted-API long-term-memory `ContextProvider`. |
 | [`agent-framework-cosmos`](crates/agent-framework-cosmos) | Azure Cosmos DB NoSQL `ChatMessageStore`, workflow checkpoints, and vector store (master key or Entra ID, REST). |
+| [`agent-framework-qdrant`](crates/agent-framework-qdrant) | Qdrant vector store (named dense vectors, payload indexes, portable filters; REST via `reqwest`). |
 | [`agent-framework-copilotstudio`](crates/agent-framework-copilotstudio) | Microsoft Copilot Studio agent client (Direct-to-Engine). |
 | [`agent-framework-purview`](crates/agent-framework-purview) | Microsoft Purview compliance middleware (`processContent` DLP checks). |
 | [`agent-framework`](crates/agent-framework) | Umbrella crate re-exporting the core plus everything above behind cargo features. |
@@ -201,11 +202,12 @@ unconditionally, plus each companion crate behind a cargo feature:
 | `declarative` | [`agent-framework-declarative`](crates/agent-framework-declarative) — YAML/JSON agents & workflows | no |
 | `hosting` | [`agent-framework-hosting`](crates/agent-framework-hosting) — serve agents over HTTP (DevUI-style, A2A, AG-UI, OpenAI-compatible) | no |
 | `hosting-mcp` | [`agent-framework-hosting-mcp`](crates/agent-framework-hosting-mcp) — serve agents and workflows as MCP tools | no |
-| `redis` | [`agent-framework-redis`](crates/agent-framework-redis) — Redis chat-message store & context provider | no |
+| `redis` | [`agent-framework-redis`](crates/agent-framework-redis) — Redis/Valkey history providers, context provider & RediSearch vector store | no |
 | `mem0` | [`agent-framework-mem0`](crates/agent-framework-mem0) — Mem0 long-term memory provider | no |
 | `foundry` | [`agent-framework-foundry`](crates/agent-framework-foundry) — Azure AI Foundry Responses API chat client, Prompt Agents, embeddings, and managed memory | no |
 | `azure-ai-search` | [`agent-framework-azure-ai-search`](crates/agent-framework-azure-ai-search) — Azure AI Search memory | no |
 | `cosmos` | [`agent-framework-cosmos`](crates/agent-framework-cosmos) — Cosmos DB NoSQL message store, checkpoints, and vector store | no |
+| `qdrant` | [`agent-framework-qdrant`](crates/agent-framework-qdrant) — Qdrant vector store | no |
 | `copilotstudio` | [`agent-framework-copilotstudio`](crates/agent-framework-copilotstudio) — Copilot Studio agents | no |
 | `purview` | [`agent-framework-purview`](crates/agent-framework-purview) — Purview compliance middleware | no |
 | `otel-metrics` | GenAI metrics (token-usage / operation-duration / function-invocation histograms) via the `opentelemetry` API crate | no |
@@ -271,6 +273,8 @@ one-to-one:
 | `foundry` / `azure-ai-search` packages | [`agent-framework-foundry`](crates/agent-framework-foundry) / [`agent-framework-azure-ai-search`](crates/agent-framework-azure-ai-search) |
 | `copilotstudio` / `purview` packages | [`agent-framework-copilotstudio`](crates/agent-framework-copilotstudio) / [`agent-framework-purview`](crates/agent-framework-purview) |
 | (.NET `Microsoft.Agents.AI.CosmosNoSql`) | [`agent-framework-cosmos`](crates/agent-framework-cosmos) |
+| `qdrant` package | [`agent-framework-qdrant`](crates/agent-framework-qdrant) (`QdrantStore`, `QdrantCollection`) |
+| (.NET `Microsoft.Agents.AI.Valkey`) | [`agent-framework-redis`](crates/agent-framework-redis) (`ValkeyChatHistoryProvider`) |
 
 Cross-cutting behavior implemented in Python via class decorators
 (`use_function_invocation`, `use_*_middleware`) is expressed in Rust as wrapper
@@ -299,13 +303,14 @@ section (the current source of truth). The remaining gaps:
       Prompt-Agent client; `as_mcp_server`
 - [ ] MCP client: standalone GET-based SSE listening, automatic reconnect,
       elicitation
-- [ ] Redis provider: embeddings/vector-KNN and hybrid search (BM25
-      full-text ships on Redis Stack)
+- [ ] Redis context provider: embeddings/vector-KNN and hybrid search (BM25
+      full-text ships on Redis Stack; the separate Redis vector store ships)
 - [ ] Cosmos DB: `TransactionalBatch`, hierarchical partition keys, TTL
       (Entra ID auth and the Cosmos-backed workflow-checkpoint store ship)
 - [ ] Vector connectors upstream added alongside the portable filter:
-      PostgreSQL/pgvector, Qdrant, Redis HASH/JSON, and SQL Server / Azure SQL
-      native vector (the last needs a TDS driver this workspace does not have)
+      PostgreSQL/pgvector and SQL Server / Azure SQL native vector (the last
+      needs a TDS driver this workspace does not have); Qdrant and Redis
+      HASH/JSON ship
 - [ ] Azure: a Content Understanding context provider, Foundry evaluations,
       and the image half of Foundry embeddings (the text half, over both
       endpoints, ships; the Foundry memory provider ships)

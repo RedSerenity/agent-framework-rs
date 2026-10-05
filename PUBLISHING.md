@@ -25,7 +25,7 @@ the order does not matter:
    `agent-framework-declarative`, `agent-framework-gemini`,
    `agent-framework-hosting`, `agent-framework-mcp`, `agent-framework-mem0`,
    `agent-framework-openai`, `agent-framework-purview`,
-   `agent-framework-redis`
+   `agent-framework-qdrant`, `agent-framework-redis`
 3. **Tier 2** — `agent-framework-azure`, `agent-framework-foundry-local`,
    `agent-framework-github-copilot`, `agent-framework-mistral`,
    `agent-framework-ollama` (need `openai`), and
@@ -39,7 +39,7 @@ the order does not matter:
 # One tier at a time; crates.io indexing is fast but not instant, so give
 # each tier a moment before publishing the next.
 cargo publish -p agent-framework-core
-for c in a2a bedrock copilotstudio declarative gemini hosting mcp mem0 openai purview redis; do
+for c in a2a bedrock copilotstudio declarative gemini hosting mcp mem0 openai purview qdrant redis; do
   cargo publish -p agent-framework-$c
 done
 for c in azure foundry-local github-copilot mistral ollama hosting-mcp; do
@@ -55,7 +55,8 @@ cargo publish -p agent-framework
 
 - **Names are free** ✅ — checked against the crates.io API on 2026-07-13:
   all 22 `agent-framework*` names in this workspace returned 404 (not
-  registered). Re-check just before publishing (`https://crates.io/api/v1/crates/<name>`
+  registered); `agent-framework-qdrant`, added later, returned 404 on
+  2026-10-05. Re-check just before publishing (`https://crates.io/api/v1/crates/<name>`
   with a User-Agent header); names are first-come-first-served.
 - **Trademark note.** This is an independent port, not affiliated with or
   endorsed by Microsoft; keep the crate descriptions/README saying so.
