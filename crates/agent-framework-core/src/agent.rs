@@ -474,7 +474,10 @@ impl Agent {
         // emit the resulting messages as updates. Token-level streaming is only
         // used when there is no agent middleware to honor.
         if self.has_middleware() {
-            let response = match self.run_core(final_messages, options, true).await {
+            let (response, persisted_input) = match self
+                .run_core(final_messages, options, input.len(), true)
+                .await
+            {
                 Ok(r) => r,
                 Err(e) => {
                     for cp in self.combined_providers(&session) {
@@ -484,8 +487,10 @@ impl Agent {
                 }
             };
             self.update_session_conversation_id(&mut session, response.conversation_id.as_deref())?;
+            let persisted_input = persisted_input.as_deref().unwrap_or(&input);
             for cp in self.combined_providers(&session) {
-                cp.after_run(&input, &response.messages, None).await?;
+                cp.after_run(persisted_input, &response.messages, None)
+                    .await?;
             }
             // Distinct message ids keep boundaries when re-aggregated; the
             // response's conversation/response ids and usage ride along so
@@ -643,23 +648,29 @@ impl Agent {
     /// Wrapped in an `invoke_agent` span (OTel GenAI semconv). The plain
     /// token-streaming path does not go through here; that path is observed at
     /// the chat-client decorator level (see [`crate::observability`]).
+    ///
+    /// `input_len` is the number of trailing `final_messages` that are the
+    /// caller's run input (see [`AgentContext::input_start`]). Alongside the
+    /// response, returns the run input middleware asked to be persisted in
+    /// place of the caller's original (see [`AgentContext::persisted_input`]).
     async fn run_core(
         &self,
         final_messages: Vec<Message>,
         options: ChatOptions,
+        input_len: usize,
         is_streaming: bool,
-    ) -> Result<AgentResponse> {
+    ) -> Result<(AgentResponse, Option<Vec<Message>>)> {
         let span = crate::observability::agent_span(
             self.name.as_deref().unwrap_or(self.id.as_str()),
             &self.id,
         );
         async move {
             let result = self
-                .run_core_inner(final_messages, options, is_streaming)
+                .run_core_inner(final_messages, options, input_len, is_streaming)
                 .await;
             let span = tracing::Span::current();
             match &result {
-                Ok(response) => {
+                Ok((response, _)) => {
                     if let Some(usage) = &response.usage_details {
                         if let Some(input) = usage.input_token_count {
                             span.record(crate::observability::attr::INPUT_TOKENS, input);
@@ -683,8 +694,10 @@ impl Agent {
         &self,
         final_messages: Vec<Message>,
         options: ChatOptions,
+        input_len: usize,
         is_streaming: bool,
-    ) -> Result<AgentResponse> {
+    ) -> Result<(AgentResponse, Option<Vec<Message>>)> {
+        let tools = options.tools.clone();
         let client = self.client.clone();
         let chat_middleware = self.chat_middleware.clone();
         let terminal: Terminal<AgentContext> = Box::new(move |mut ctx: AgentContext| {
@@ -708,8 +721,13 @@ impl Agent {
             }) as crate::tools::BoxFuture<Result<AgentContext>>
         });
 
-        let ctx = AgentContext::new(final_messages, is_streaming);
+        let mut ctx = AgentContext::new(final_messages, is_streaming);
+        ctx.input_start = ctx.messages.len().saturating_sub(input_len);
+        ctx.agent_id = Some(self.id.clone());
+        ctx.agent_name = self.name.clone();
+        ctx.tools = tools;
         let ctx = self.agent_middleware.execute(ctx, terminal).await?;
+        let persisted_input = ctx.persisted_input;
         let mut response = ctx.result.ok_or_else(|| {
             crate::error::Error::AgentExecution("agent produced no result".into())
         })?;
@@ -721,7 +739,7 @@ impl Agent {
                 }
             }
         }
-        Ok(response)
+        Ok((response, persisted_input))
     }
 
     /// Invoke the chat client once, routed through the chat-middleware
@@ -966,7 +984,10 @@ impl SupportsAgentRun for Agent {
 
         let (final_messages, chat_options) =
             self.prepare_request(&messages, session, &options).await?;
-        let response = match self.run_core(final_messages, chat_options, false).await {
+        let (response, persisted_input) = match self
+            .run_core(final_messages, chat_options, messages.len(), false)
+            .await
+        {
             Ok(r) => r,
             Err(e) => {
                 // Failure path: let context providers observe the error.
@@ -986,8 +1007,10 @@ impl SupportsAgentRun for Agent {
 
         // Fire the context providers' success completion hook (this is what
         // records history, for any attached `HistoryProvider`).
+        let persisted_input = persisted_input.as_deref().unwrap_or(&messages);
         for cp in self.combined_providers(session) {
-            cp.after_run(&messages, &response.messages, None).await?;
+            cp.after_run(persisted_input, &response.messages, None)
+                .await?;
         }
 
         Ok(response)

@@ -7,6 +7,31 @@ may break APIs).
 
 ## [Unreleased]
 
+### Added
+
+- **Agent hooks** (`agent_framework_core::agent_hooks`, experimental): a port
+  of upstream's AGENT-HOOKS-0.1 enforcement (`_agent_hooks.py`,
+  `Microsoft.Agents.AI.AgentHooks`). `AgentHooks::new(AgentHooksOptions)` (or
+  `AgentHooks::from_emitter` for a host-owned session) and
+  `AgentHooks::agent_builder(client)` install the agent, chat and function
+  seams as one unit, emitting all eight interception points and enforcing the
+  combined verdicts fail-closed: run-level denies fail the run with the new
+  `Error::InterceptionBlocked`, tool-seam denies become tool-error results,
+  `host_error:*` failures halt the run, transforms are written back into the
+  run input, request, tool arguments/results and responses, streaming is
+  buffered until every verdict permits, and denied content never becomes
+  durable history. The contract itself (`agent_hooks::protocol`: `Verdict`,
+  the four composition profiles, the approval seam, `jcs-sha256` identities,
+  `InterceptionEmitter`, `AgentContextBuilder`, `InterceptionRecord`) is
+  implemented in-crate, matched against `agent-hooks-sdk` 0.1.0b1.
+- `AgentContext` gains `agent_id`, `agent_name`, `tools`, `input_start` and
+  `persisted_input` (a struct literal for it needs them; `AgentContext::new`
+  fills defaults). Agent middleware can now tell the caller's run input from
+  injected history (`AgentContext::input_messages`) and have a rewritten
+  input persisted in place of the original.
+- The function-invocation loop now puts the model's call id in
+  `FunctionInvocationContext::metadata["call_id"]` (as upstream does).
+
 ## [0.9.0] — 2026-09-30
 
 Four values the code already had and never read, a Foundry surface it could

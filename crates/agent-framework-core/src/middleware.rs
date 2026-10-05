@@ -94,6 +94,9 @@ impl<C: Send + 'static> MiddlewarePipeline<C> {
 
 /// Context flowing through the agent middleware pipeline.
 pub struct AgentContext {
+    /// The full request the run sends: context-provider history and the
+    /// system instructions, followed by the caller's run input (from
+    /// [`input_start`](Self::input_start) onward).
     pub messages: Vec<Message>,
     pub is_streaming: bool,
     pub metadata: HashMap<String, serde_json::Value>,
@@ -101,6 +104,31 @@ pub struct AgentContext {
     pub result: Option<AgentResponse>,
     /// If set to true, the pipeline stops without running further middleware.
     pub terminate: bool,
+    /// The id of the agent running this pipeline, when run by an
+    /// [`Agent`](crate::agent::Agent). Mirrors upstream `AgentContext.agent.id`.
+    pub agent_id: Option<String>,
+    /// The name of the agent running this pipeline, if it has one. Mirrors
+    /// upstream `AgentContext.agent.name`.
+    pub agent_name: Option<String>,
+    /// The run's effective tool set at run start (agent tools, per-run tools,
+    /// context-provider tools and resolved tool sources). Mirrors upstream's
+    /// run-start tool resolution (`AgentContext._resolve_run_start_tools`).
+    pub tools: Vec<ToolDefinition>,
+    /// Index into [`messages`](Self::messages) at which the caller's run
+    /// input begins; everything before it was injected by the framework
+    /// (instructions, context-provider history). Upstream's
+    /// `AgentContext.messages` holds only the run input because context
+    /// providers run inside the pipeline there; in this port they run before
+    /// it, so the boundary is carried explicitly. Middleware that inserts
+    /// messages ahead of the input should advance it accordingly.
+    pub input_start: usize,
+    /// The run input the session's context providers (and so any history
+    /// provider) record when the run succeeds. `None` (the default) records
+    /// the caller's original input; middleware that rewrites the run input —
+    /// e.g. an input guardrail transform — sets it so the *rewritten* input
+    /// becomes durable instead (upstream persists the middleware-rewritten
+    /// `AgentContext.messages`).
+    pub persisted_input: Option<Vec<Message>>,
 }
 
 impl AgentContext {
@@ -111,7 +139,18 @@ impl AgentContext {
             metadata: HashMap::new(),
             result: None,
             terminate: false,
+            agent_id: None,
+            agent_name: None,
+            tools: Vec::new(),
+            input_start: 0,
+            persisted_input: None,
         }
+    }
+
+    /// The caller's run input: [`messages`](Self::messages) from
+    /// [`input_start`](Self::input_start) onward (clamped to the list).
+    pub fn input_messages(&self) -> &[Message] {
+        &self.messages[self.input_start.min(self.messages.len())..]
     }
 }
 
