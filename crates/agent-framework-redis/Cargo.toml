@@ -9,7 +9,7 @@ authors.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
-description = "Redis-backed chat message store and context provider"
+description = "Redis/Valkey-backed chat history providers, context provider and RediSearch vector store"
 
 [dependencies]
 agent-framework-core = { workspace = true }
@@ -24,8 +24,15 @@ uuid = { workspace = true }
 # Async Redis client. `tokio-comp` pulls in the `aio` feature set (the
 # `MultiplexedConnection` type, `AsyncCommands`/`AsyncTypedCommands` traits);
 # default features (acl/streams/geospatial/script/num-bigint) are disabled
-# since this crate only needs plain key/list commands.
-redis = { version = "1", default-features = false, features = ["tokio-comp"] }
+# since this crate only needs plain key/list/search commands.
+# `token-based-authentication` exposes `StreamingCredentialsProvider`, the
+# Rust counterpart of redis-py's `CredentialProvider` (Entra ID tokens).
+redis = { version = "1", default-features = false, features = ["tokio-comp", "token-based-authentication"] }
+
+[features]
+default = []
+# TLS (`rediss://` URLs and `ssl = true` host settings) via rustls.
+tls = ["redis/tokio-rustls-comp"]
 
 [dev-dependencies]
 tokio = { workspace = true }
