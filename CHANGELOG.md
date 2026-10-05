@@ -18,6 +18,19 @@ without `..Default::default()` needs them. `ContextProvider` gains a defaulted
 `history_snapshot` method, which only matters to an implementation that
 already defines a method of that name.
 
+**MCP client behaviour changes, all following upstream.**
+`chat_client_sampling_handler` now **denies** sampling until a
+`SamplingGuard` approval is configured (use
+`chat_client_sampling_handler_with(client, SamplingGuard::default().approve_all())`
+to keep the old behaviour, with a 4096-token cap and 25 requests per session).
+The MCP tool wrappers now expose server prompts as functions (opt out with
+`load_prompts(false)`), match `allowed_tools` / per-tool approval names
+against a tool's raw remote name rather than its normalized alias, treat two
+tools mapping to one local name as an error rather than skipping one, choose
+`structuredContent` over `content` by default (`ToolResultContent`), and
+forward only the arguments a tool declares. `McpApprovalMode::PerTool` gains
+a `never_require` set.
+
 **One behaviour change.** `Workflow::run_from_checkpoint` now keeps
 checkpointing into the storage it resumed from, overriding the build-time
 storage, as upstream's runtime `checkpoint_storage` does. A run resumed from
@@ -66,6 +79,20 @@ nowhere), so a run that paused twice could not be resumed the second time.
   `ping`, `tools/list`, `tools/call`) over stdio and streamable HTTP, with
   `Mcp-Session-Id` sessions. Available as the facade's `hosting-mcp`
   feature.
+- **MCP client parity** with upstream `MCPTool`: `tool_name_prefix`;
+  prompts as functions with `parse_prompt_results`; `tool_result_content`
+  modes and `parse_tool_results`; `additional_tool_argument_names`;
+  `_meta` echoed from `tools/list` (`McpClient::call_tool_with_meta`);
+  progressive disclosure (`progressive_disclosure` / `always_load`, with
+  `list_mcp_tools` / `load_tool` / `unload_tool` loading into the live run);
+  `logging_level` (`logging/setLevel`) and server `notifications/message`
+  re-emitted through `tracing`; ambiguity errors for configured names; and
+  one transparent reconnect-and-retry when a transport reports itself closed
+  (new `McpTransport::is_closed`: stdio exit, websocket close, HTTP `404` on
+  the session). The three wrappers now share one implementation.
+  `SamplingGuard` adds upstream's sampling approval, token cap, and
+  per-session limit.
+- `McpServer::end_all_sessions` (hosting-mcp).
 - `Workflow::run_with_checkpointing` — checkpoint storage for one run,
   overriding the build-time storage.
 - `AgentSession::with_session_id`.

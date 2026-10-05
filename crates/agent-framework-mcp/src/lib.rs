@@ -56,8 +56,10 @@
 //!   capability during `initialize`.
 //! - **Sampling** (server-initiated `sampling/createMessage`): register a
 //!   [`SamplingHandler`] via `.sampling_handler(..)` on [`McpClient`] or any
-//!   tool wrapper; [`chat_client_sampling_handler`] adapts any `ChatClient`
-//!   into one. The `sampling` capability is declared during `initialize`
+//!   tool wrapper; [`chat_client_sampling_handler_with`] adapts any
+//!   `ChatClient` into one behind a [`SamplingGuard`] — which, as upstream,
+//!   **denies every request** until an approval is configured, caps
+//!   `maxTokens` at 4096, and allows 25 requests per session. The `sampling` capability is declared during `initialize`
 //!   only when a handler is registered, matching the `mcp` Python SDK
 //!   (which derives `ClientCapabilities` from whichever callbacks were
 //!   supplied at `ClientSession` construction). All three transports route
@@ -75,7 +77,28 @@
 //!   it) — this is a case where the Rust port exceeds Python parity; see
 //!   `PARITY.md`.
 //!
+//! ## Catalog shaping, calls and reconnects
+//!
+//! The tool wrappers follow upstream `MCPTool` (see [`McpStdioTool`]):
+//! optional `tool_name_prefix`; prompts exposed as functions; raw-name
+//! `allowed_tools` / approval matching with ambiguity errors; a
+//! [`ToolResultContent`] policy (or a custom parser); forwarding only
+//! declared (plus configured extra) arguments; echoing a tool's `_meta`;
+//! progressive disclosure (`list_mcp_tools` / `load_tool` / `unload_tool`);
+//! `logging/setLevel` with server log messages re-emitted through
+//! `tracing`; and a single reconnect-and-retry when the transport reports
+//! the connection closed (stdio exit, websocket close, or an HTTP `404` on
+//! the session id).
+//!
 //! ## Not implemented (future work)
+//!
+//! - **MCP tasks** (`tools/call` with `task`, `tasks/get` polling,
+//!   `tasks/result`, `tasks/cancel`) for tools declaring
+//!   `execution.taskSupport: "required"`.
+//! - **Per-run dynamic headers** (upstream's `header_provider`) and an
+//!   injected HTTP client.
+//! - **Trace-context propagation** into `_meta` (upstream injects the
+//!   OpenTelemetry context).
 //!
 //! - **Standalone GET-based SSE listening** for the streamable HTTP
 //!   transport (a persistent stream the server opens unprompted, outside of
@@ -83,8 +106,6 @@
 //!   the SSE response to an *active* `call()` **is** routed to the
 //!   registered handler; only that separate, connection-initiated-by-the-
 //!   server stream is unsupported.
-//! - **Automatic reconnect** on a broken pipe/connection; failures are
-//!   surfaced as clear errors instead.
 //!
 //! ## Example
 //!
@@ -134,19 +155,23 @@
 mod client;
 mod protocol;
 mod sampling;
+mod session;
 mod tool;
 mod transport;
 
 pub use client::McpClient;
 pub use protocol::{
     CallToolResult, ContentBlock, GetPromptResult, Implementation, InitializeResult,
-    ListPromptsResult, ListToolsResult, PromptArgument, PromptDescriptor, PromptMessage, RpcError,
-    ToolDescriptor, COMPATIBLE_PROTOCOL_VERSIONS, PROTOCOL_VERSION,
+    ListPromptsResult, ListToolsResult, McpLogLevel, PromptArgument, PromptDescriptor,
+    PromptMessage, RpcError, ToolDescriptor, ToolResultContent, COMPATIBLE_PROTOCOL_VERSIONS,
+    PROTOCOL_VERSION,
 };
 pub use sampling::{
-    chat_client_sampling_handler, BoxedServerRequestHandler, CreateMessageParams,
-    CreateMessageResult, Root, SamplingHandler, SamplingMessage,
+    chat_client_sampling_handler, chat_client_sampling_handler_with, BoxedServerRequestHandler,
+    CreateMessageParams, CreateMessageResult, Root, SamplingApproval, SamplingGuard,
+    SamplingHandler, SamplingMessage,
 };
+pub use session::{AdditionalArgumentNames, PromptResultParser, ToolResultParser};
 pub use tool::{McpApprovalMode, McpStdioTool, McpStreamableHttpTool, McpWebsocketTool};
 pub use transport::{
     McpStdioTransport, McpStreamableHttpTransport, McpTransport, McpWebsocketTransport, StdioEnv,

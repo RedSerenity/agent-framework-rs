@@ -65,6 +65,19 @@ pub trait McpTransport: Send + Sync {
     fn set_notification_handler(&self, handler: BoxedNotificationHandler) {
         let _ = handler;
     }
+
+    /// Whether the connection is gone for good: the stdio server exited,
+    /// the websocket closed, or the HTTP server ended the session (`404` on
+    /// a request carrying its session id). A closed transport never
+    /// recovers; the owner reconnects with a new one. The MCP tool wrappers
+    /// read this after a failed call to decide whether reconnecting and
+    /// retrying once is worthwhile, as upstream does on
+    /// `ClosedResourceError` / "session terminated".
+    ///
+    /// The default is `false`, for transports that cannot tell.
+    fn is_closed(&self) -> bool {
+        false
+    }
 }
 
 pub use http::McpStreamableHttpTransport;

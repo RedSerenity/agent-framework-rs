@@ -212,6 +212,8 @@ struct StdioInner {
     /// Handler for server notifications (e.g. `notifications/tools/list_changed`),
     /// installed via [`McpTransport::set_notification_handler`].
     notification_handler: StdMutex<Option<BoxedNotificationHandler>>,
+    /// Set once the server's stdout has closed (see [`McpTransport::is_closed`]).
+    closed: std::sync::atomic::AtomicBool,
 }
 
 impl McpStdioTransport {
@@ -273,6 +275,7 @@ impl McpStdioTransport {
             stderr_task: StdMutex::new(None),
             server_request_handler: StdMutex::new(None),
             notification_handler: StdMutex::new(None),
+            closed: std::sync::atomic::AtomicBool::new(false),
         });
 
         let reader_task = spawn_reader(stdout, inner.clone());
@@ -375,6 +378,10 @@ impl McpTransport for McpStdioTransport {
     fn set_notification_handler(&self, handler: BoxedNotificationHandler) {
         *self.inner.notification_handler.lock().unwrap() = Some(handler);
     }
+
+    fn is_closed(&self) -> bool {
+        self.inner.closed.load(std::sync::atomic::Ordering::Acquire)
+    }
 }
 
 impl Drop for StdioInner {
@@ -441,6 +448,10 @@ fn spawn_reader(
             }
         }
         // The server is gone; unblock anyone still waiting on a response.
+        // Marked closed first, so a caller woken below already sees it.
+        inner
+            .closed
+            .store(true, std::sync::atomic::Ordering::Release);
         let mut pending = inner.pending.lock().unwrap();
         for (_, tx) in pending.drain() {
             let _ = tx.send(Err(RpcError {

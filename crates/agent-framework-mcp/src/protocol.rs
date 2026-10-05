@@ -181,6 +181,35 @@ pub struct ToolDescriptor {
     pub input_schema: Value,
     #[serde(default)]
     pub output_schema: Option<Value>,
+    /// The tool's `_meta`, echoed back on `tools/call` (some MCP proxies
+    /// require it, as upstream notes).
+    #[serde(default, rename = "_meta")]
+    pub meta: Option<Value>,
+    /// Behavioural hints (`readOnlyHint`, `destructiveHint`, ...), verbatim.
+    #[serde(default)]
+    pub annotations: Option<Value>,
+    /// Execution properties, e.g. `{"taskSupport": "required"}`.
+    #[serde(default)]
+    pub execution: Option<Value>,
+}
+
+impl ToolDescriptor {
+    /// The names declared in `inputSchema.properties`.
+    pub fn declared_parameters(&self) -> std::collections::HashSet<String> {
+        self.input_schema
+            .get("properties")
+            .and_then(Value::as_object)
+            .map(|p| p.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// `execution.taskSupport` (`"required"`, `"optional"`, `"forbidden"`).
+    pub fn task_support(&self) -> Option<&str> {
+        self.execution
+            .as_ref()
+            .and_then(|e| e.get("taskSupport"))
+            .and_then(Value::as_str)
+    }
 }
 
 fn empty_object_schema() -> Value {
@@ -364,12 +393,79 @@ pub(crate) fn role_and_content_to_chat_message(role: &str, content: &Value) -> M
     )
 }
 
+/// An MCP logging level (RFC 5424 severities), for `logging/setLevel` and
+/// `notifications/message`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum McpLogLevel {
+    Debug,
+    Info,
+    Notice,
+    Warning,
+    Error,
+    Critical,
+    Alert,
+    Emergency,
+}
+
+impl McpLogLevel {
+    /// The wire name (`"debug"`, `"warning"`, ...).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Debug => "debug",
+            Self::Info => "info",
+            Self::Notice => "notice",
+            Self::Warning => "warning",
+            Self::Error => "error",
+            Self::Critical => "critical",
+            Self::Alert => "alert",
+            Self::Emergency => "emergency",
+        }
+    }
+
+    /// Parse a wire name.
+    pub fn parse(name: &str) -> Option<Self> {
+        Some(match name {
+            "debug" => Self::Debug,
+            "info" => Self::Info,
+            "notice" => Self::Notice,
+            "warning" => Self::Warning,
+            "error" => Self::Error,
+            "critical" => Self::Critical,
+            "alert" => Self::Alert,
+            "emergency" => Self::Emergency,
+            _ => return None,
+        })
+    }
+}
+
+/// How the model-visible value of a tool result is chosen when the result
+/// carries both `content` and `structuredContent`. Mirrors upstream's
+/// `MCPToolResultContentMode`; servers disagree on whether the two are
+/// duplicates or complementary, so the caller picks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ToolResultContent {
+    /// `structuredContent` when present, else `content` (upstream's default).
+    #[default]
+    StructuredFirst,
+    /// `content` when non-empty, else `structuredContent`.
+    ContentFirst,
+    /// Ignore `structuredContent`.
+    ContentOnly,
+    /// Ignore `content`.
+    StructuredOnly,
+    /// The `content` blocks followed by serialized `structuredContent` as a
+    /// text block.
+    Both,
+}
+
 /// The result of a `tools/call` request.
 #[derive(Debug, Clone, Default)]
 pub struct CallToolResult {
     pub content: Vec<ContentBlock>,
     pub is_error: bool,
     pub structured_content: Option<Value>,
+    /// The result's `_meta` (information-flow labels and the like).
+    pub meta: Option<Value>,
 }
 
 impl CallToolResult {
@@ -386,6 +482,7 @@ impl CallToolResult {
             content,
             is_error,
             structured_content,
+            meta: v.get("_meta").cloned(),
         }
     }
 
@@ -397,22 +494,50 @@ impl CallToolResult {
     /// - No content but a `structuredContent` payload returns that payload.
     /// - Anything else (zero or multiple / non-text blocks) becomes a JSON
     ///   array preserving each block's shape.
+    ///
+    /// This is [`ToolResultContent::ContentFirst`]; see
+    /// [`Self::to_value_with`] for the other policies.
     pub fn to_value(&self) -> Value {
-        if self.content.len() == 1 {
-            if let ContentBlock::Text(text) = &self.content[0] {
-                return match serde_json::from_str::<Value>(text) {
-                    Ok(parsed) => parsed,
-                    Err(_) => Value::String(text.clone()),
-                };
-            }
+        self.to_value_with(ToolResultContent::ContentFirst)
+    }
+
+    /// The model-visible value under an explicit `mode` for a result that
+    /// may carry both `content` and `structuredContent`. Mirrors upstream's
+    /// `tool_result_content` (#7866). An empty selection is `null`.
+    pub fn to_value_with(&self, mode: ToolResultContent) -> Value {
+        let content = self.content_value();
+        let structured = self.structured_content.clone();
+        let chosen = match mode {
+            ToolResultContent::StructuredFirst => structured.or(content),
+            ToolResultContent::ContentFirst => content.or(structured),
+            ToolResultContent::ContentOnly => content,
+            ToolResultContent::StructuredOnly => structured,
+            ToolResultContent::Both => match structured {
+                None => content,
+                Some(structured) => {
+                    let mut blocks: Vec<Value> =
+                        self.content.iter().map(ContentBlock::to_json).collect();
+                    blocks.push(json!({ "type": "text", "text": structured.to_string() }));
+                    Some(Value::Array(blocks))
+                }
+            },
+        };
+        chosen.unwrap_or(Value::Null)
+    }
+
+    /// The `content` blocks as one value, or `None` when there are none: a
+    /// lone text block is its text (parsed if it is JSON), anything else an
+    /// array of blocks.
+    fn content_value(&self) -> Option<Value> {
+        match self.content.as_slice() {
+            [] => None,
+            [ContentBlock::Text(text)] => Some(
+                serde_json::from_str::<Value>(text).unwrap_or_else(|_| Value::String(text.clone())),
+            ),
+            blocks => Some(Value::Array(
+                blocks.iter().map(ContentBlock::to_json).collect(),
+            )),
         }
-        if self.content.is_empty() {
-            if let Some(structured) = &self.structured_content {
-                return structured.clone();
-            }
-            return Value::Null;
-        }
-        Value::Array(self.content.iter().map(ContentBlock::to_json).collect())
     }
 
     /// A human-readable message extracted from the text blocks, used when

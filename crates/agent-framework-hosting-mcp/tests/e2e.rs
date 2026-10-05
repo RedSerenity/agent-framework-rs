@@ -282,3 +282,40 @@ async fn misconfigured_agent_tools_are_reported() {
     let tool = AgentMcpTool::new(Arc::new(Counter)).required("ghost");
     assert!(tool.validate().is_err());
 }
+
+/// The server ends the session (as a restart would): the client tool sees
+/// `404` on its session id, reconnects with a fresh `initialize`, and
+/// retries the call once — transparently to the caller.
+#[tokio::test]
+async fn a_tool_survives_the_server_ending_its_session() {
+    use agent_framework_core::tools::ToolSource;
+    use agent_framework_mcp::McpStreamableHttpTool;
+
+    let server = server();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+    let router = server.clone().into_router("/mcp");
+    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+
+    let tool = McpStreamableHttpTool::new("remote", url).load_prompts(false);
+    let defs = tool.resolve_tools().await.unwrap();
+    let shout = defs.iter().find(|d| d.name == "shout").unwrap();
+    let call = || {
+        shout
+            .executor
+            .as_ref()
+            .unwrap()
+            .invoke(json!({ "input": "a" }))
+    };
+    assert_eq!(call().await.unwrap(), json!("A"));
+    let first = tool.client().await.unwrap();
+
+    server.end_all_sessions();
+    assert_eq!(call().await.unwrap(), json!("A"));
+    let second = tool.client().await.unwrap();
+    assert!(
+        !Arc::ptr_eq(&first, &second),
+        "a new session was established"
+    );
+    assert!(first.is_closed());
+}

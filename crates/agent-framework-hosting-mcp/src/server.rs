@@ -254,6 +254,16 @@ impl McpServer {
             .with_state(self)
     }
 
+    /// End every streamable-HTTP session, as a restart would: clients get
+    /// `404` on their next request and must re-initialize.
+    pub fn end_all_sessions(&self) {
+        self.inner
+            .sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+    }
+
     fn session_live(&self, id: &str) -> bool {
         self.inner
             .sessions

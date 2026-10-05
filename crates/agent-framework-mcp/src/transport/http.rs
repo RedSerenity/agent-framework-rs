@@ -102,6 +102,8 @@ pub struct McpStreamableHttpTransport {
     /// [`McpTransport::call`] — see the crate docs on standalone GET-based
     /// SSE listening not being implemented.
     notification_handler: StdMutex<Option<BoxedNotificationHandler>>,
+    /// Set when the server ends our session (see [`McpTransport::is_closed`]).
+    closed: std::sync::atomic::AtomicBool,
 }
 
 impl McpStreamableHttpTransport {
@@ -136,6 +138,7 @@ impl McpStreamableHttpTransport {
             next_id: IdGenerator::new(),
             server_request_handler: StdMutex::new(None),
             notification_handler: StdMutex::new(None),
+            closed: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -264,6 +267,20 @@ impl McpStreamableHttpTransport {
     fn next_request_id(&self) -> i64 {
         self.next_id.next()
     }
+
+    /// A non-success response as an error. A `404` on a request that carried
+    /// a session id is the server ending the session: the transport spec
+    /// says the client must start a new one, so the transport is marked
+    /// closed for its owner to reconnect.
+    async fn status_error(&self, had_session: bool, resp: reqwest::Response) -> Error {
+        let status = resp.status();
+        if had_session && status == reqwest::StatusCode::NOT_FOUND {
+            self.closed
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
+        let text = resp.text().await.unwrap_or_default();
+        Error::service(format!("MCP HTTP {status}: {text}"))
+    }
 }
 
 #[async_trait]
@@ -271,6 +288,7 @@ impl McpTransport for McpStreamableHttpTransport {
     async fn call(&self, method: &str, params: Value) -> Result<Value> {
         let id = self.next_request_id();
         let body = protocol::build_request(id, method, params);
+        let had_session = self.session_id().await.is_some();
         let resp = self.post(&body).await?;
         self.capture_session_id(&resp).await;
 
@@ -283,8 +301,7 @@ impl McpTransport for McpStreamableHttpTransport {
             .to_string();
 
         if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(Error::service(format!("MCP HTTP {status}: {text}")));
+            return Err(self.status_error(had_session, resp).await);
         }
 
         if content_type.contains("text/event-stream") {
@@ -300,12 +317,11 @@ impl McpTransport for McpStreamableHttpTransport {
 
     async fn notify(&self, method: &str, params: Value) -> Result<()> {
         let body = protocol::build_notification(method, params);
+        let had_session = self.session_id().await.is_some();
         let resp = self.post(&body).await?;
         self.capture_session_id(&resp).await;
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(Error::service(format!("MCP HTTP {status}: {text}")));
+        if !resp.status().is_success() {
+            return Err(self.status_error(had_session, resp).await);
         }
         Ok(())
     }
@@ -335,6 +351,10 @@ impl McpTransport for McpStreamableHttpTransport {
 
     fn set_notification_handler(&self, handler: BoxedNotificationHandler) {
         *self.notification_handler.lock().unwrap() = Some(handler);
+    }
+
+    fn is_closed(&self) -> bool {
+        self.closed.load(std::sync::atomic::Ordering::Acquire)
     }
 }
 

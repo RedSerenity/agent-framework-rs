@@ -9,7 +9,7 @@ use agent_framework_core::error::{Error, Result};
 
 use crate::protocol::{
     CallToolResult, GetPromptResult, Implementation, InitializeResult, ListPromptsResult,
-    ListToolsResult, PromptDescriptor, ToolDescriptor, COMPATIBLE_PROTOCOL_VERSIONS,
+    ListToolsResult, McpLogLevel, PromptDescriptor, ToolDescriptor, COMPATIBLE_PROTOCOL_VERSIONS,
     PROTOCOL_VERSION,
 };
 use crate::sampling::{dispatch_server_request, Root, SamplingHandler, ServerRequestHandlers};
@@ -23,7 +23,34 @@ const PROMPTS_LIST_CHANGED: &str = "notifications/prompts/list_changed";
 
 /// Safety cap on `tools/list`/`prompts/list` pagination, so a server that
 /// never stops returning a `nextCursor` cannot spin the client forever.
+const LOG_MESSAGE: &str = "notifications/message";
+
 const MAX_LIST_PAGES: usize = 10_000;
+
+/// Re-emit a server's `notifications/message` through `tracing`, at the
+/// level it mapped from (upstream's `logging_callback`: debug→DEBUG,
+/// info/notice→INFO, warning→WARNING, everything above→ERROR/CRITICAL).
+fn log_server_message(params: &Value) {
+    let level = params
+        .get("level")
+        .and_then(Value::as_str)
+        .and_then(McpLogLevel::parse)
+        .unwrap_or(McpLogLevel::Info);
+    let logger = params.get("logger").and_then(Value::as_str).unwrap_or("");
+    let data = params.get("data").cloned().unwrap_or(Value::Null);
+    let data = match &data {
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    };
+    match level {
+        McpLogLevel::Debug => tracing::debug!(target: "mcp_server", logger, "{data}"),
+        McpLogLevel::Info | McpLogLevel::Notice => {
+            tracing::info!(target: "mcp_server", logger, "{data}")
+        }
+        McpLogLevel::Warning => tracing::warn!(target: "mcp_server", logger, "{data}"),
+        _ => tracing::error!(target: "mcp_server", logger, level = level.as_str(), "{data}"),
+    }
+}
 
 /// A connected MCP session: `initialize`, `ping`, `tools/list`, `tools/call`,
 /// `prompts/list`, `prompts/get`, layered over any [`McpTransport`], plus
@@ -93,7 +120,7 @@ impl McpClient {
         let notif_prompts_cache = prompts_cache.clone();
         let notif_tools_generation = tools_generation.clone();
         let notif_prompts_generation = prompts_generation.clone();
-        transport.set_notification_handler(Arc::new(move |method: String, _params: Value| {
+        transport.set_notification_handler(Arc::new(move |method: String, params: Value| {
             let tools_cache = notif_tools_cache.clone();
             let prompts_cache = notif_prompts_cache.clone();
             let tools_generation = notif_tools_generation.clone();
@@ -111,7 +138,8 @@ impl McpClient {
                         prompts_generation.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
                         *prompts_cache.write().await = None;
                     }
-                    _ => {}
+                    LOG_MESSAGE => log_server_message(&params),
+                    other => tracing::debug!(method = %other, "unhandled MCP notification"),
                 }
             })
         }));
@@ -293,15 +321,55 @@ impl McpClient {
     /// `tools/call` — invoke a tool and return the raw result, including
     /// `is_error`, without converting an error result into an `Err`.
     pub async fn call_tool(&self, name: &str, arguments: Value) -> Result<CallToolResult> {
+        self.call_tool_with_meta(name, arguments, None).await
+    }
+
+    /// [`Self::call_tool`] with request `_meta` (a progress token, trace
+    /// context, or metadata a proxy requires echoed from `tools/list`).
+    pub async fn call_tool_with_meta(
+        &self,
+        name: &str,
+        arguments: Value,
+        meta: Option<Value>,
+    ) -> Result<CallToolResult> {
         self.require_initialized().await?;
         let arguments = if arguments.is_null() {
             json!({})
         } else {
             arguments
         };
-        let params = json!({ "name": name, "arguments": arguments });
+        let mut params = json!({ "name": name, "arguments": arguments });
+        if let Some(meta) = meta.filter(|m| m.as_object().is_some_and(|o| !o.is_empty())) {
+            params["_meta"] = meta;
+        }
         let raw = self.transport.call("tools/call", params).await?;
         Ok(CallToolResult::from_value(&raw))
+    }
+
+    /// Whether the server declared the `logging` capability.
+    pub async fn supports_logging(&self) -> bool {
+        self.initialize_result
+            .read()
+            .await
+            .as_ref()
+            .is_some_and(|r| r.capabilities.get("logging").is_some())
+    }
+
+    /// `logging/setLevel` — ask the server to send `notifications/message`
+    /// at `level` and above. Those messages are re-emitted through
+    /// `tracing` (target `mcp_server`).
+    pub async fn set_logging_level(&self, level: McpLogLevel) -> Result<()> {
+        self.require_initialized().await?;
+        self.transport
+            .call("logging/setLevel", json!({ "level": level.as_str() }))
+            .await?;
+        Ok(())
+    }
+
+    /// Whether the underlying connection is gone for good (see
+    /// [`McpTransport::is_closed`]); a closed client must be replaced.
+    pub fn is_closed(&self) -> bool {
+        self.transport.is_closed()
     }
 
     /// `tools/call`, mapped to a single JSON value suitable for handing back

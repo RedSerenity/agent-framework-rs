@@ -125,6 +125,132 @@ impl CreateMessageResult {
     }
 }
 
+/// Decides whether a server's `sampling/createMessage` request may run.
+pub type SamplingApproval = Arc<dyn Fn(&CreateMessageParams) -> BoxFuture<bool> + Send + Sync>;
+
+/// The safety limits [`chat_client_sampling_handler_with`] applies before
+/// forwarding a server's sampling request to a chat client. Mirrors
+/// upstream's `sampling_approval_callback` / `sampling_max_tokens` /
+/// `sampling_max_requests`.
+///
+/// An MCP server is an untrusted third party, and forwarding its prompts to
+/// your model unreviewed is a confused-deputy risk, so the default **denies
+/// every request**: set [`approval`](Self::approval) — or
+/// [`approve_all`](Self::approve_all) as an explicit opt-in — to allow any.
+/// Requests are then rate limited per handler (one handler serves one
+/// session) and their `maxTokens` capped.
+#[derive(Clone)]
+pub struct SamplingGuard {
+    approval: Option<SamplingApproval>,
+    max_tokens: Option<u32>,
+    max_requests: Option<u32>,
+}
+
+impl Default for SamplingGuard {
+    fn default() -> Self {
+        Self {
+            approval: None,
+            max_tokens: Some(4096),
+            max_requests: Some(25),
+        }
+    }
+}
+
+impl SamplingGuard {
+    /// Approve a request when `approval` resolves to `true`.
+    pub fn approval<F, Fut>(mut self, approval: F) -> Self
+    where
+        F: Fn(&CreateMessageParams) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = bool> + Send + 'static,
+    {
+        self.approval = Some(Arc::new(move |p| Box::pin(approval(p))));
+        self
+    }
+
+    /// Approve every request (explicit opt-in to unreviewed sampling).
+    pub fn approve_all(self) -> Self {
+        self.approval(|_| async { true })
+    }
+
+    /// Cap `maxTokens` at `cap` (default 4096); `None` removes the cap.
+    pub fn max_tokens(mut self, cap: Option<u32>) -> Self {
+        self.max_tokens = cap;
+        self
+    }
+
+    /// Refuse requests past `limit` (default 25); `None` removes the limit.
+    pub fn max_requests(mut self, limit: Option<u32>) -> Self {
+        self.max_requests = limit;
+        self
+    }
+}
+
+/// [`chat_client_sampling_handler_with`] under the default
+/// [`SamplingGuard`] — which **denies every request** until an approval is
+/// configured. This matches upstream, where sampling without a
+/// `sampling_approval_callback` is refused.
+pub fn chat_client_sampling_handler(client: Arc<dyn ChatClient>) -> SamplingHandler {
+    chat_client_sampling_handler_with(client, SamplingGuard::default())
+}
+
+/// Build a [`SamplingHandler`] backed by any [`ChatClient`], guarded by
+/// `guard`: the per-session limit is checked first, then the approval, then
+/// `maxTokens` is capped — upstream's order. A refusal is an error the
+/// server receives as a JSON-RPC error.
+pub fn chat_client_sampling_handler_with(
+    client: Arc<dyn ChatClient>,
+    guard: SamplingGuard,
+) -> SamplingHandler {
+    let inner = unguarded_chat_client_sampling_handler(client);
+    let count = Arc::new(std::sync::atomic::AtomicU32::new(0));
+    Arc::new(move |mut params: CreateMessageParams| {
+        let inner = inner.clone();
+        let guard = guard.clone();
+        let count = count.clone();
+        Box::pin(async move {
+            tracing::warn!(
+                messages = params.messages.len(),
+                max_tokens = params.max_tokens,
+                "MCP server sent a sampling/createMessage request"
+            );
+            if let Some(limit) = guard.max_requests {
+                let used = count.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+                if used >= limit {
+                    return Err(Error::service(
+                        "Sampling rate limit exceeded for this MCP session.",
+                    ));
+                }
+            }
+            let approved = match &guard.approval {
+                None => {
+                    return Err(Error::service(
+                        "Sampling request denied. MCP sampling is disabled by default for \
+                         untrusted servers; configure a SamplingGuard approval that approves \
+                         the request to enable it.",
+                    ))
+                }
+                Some(approve) => approve(&params).await,
+            };
+            if !approved {
+                return Err(Error::service(
+                    "Sampling request denied by the SamplingGuard approval.",
+                ));
+            }
+            if let Some(cap) = guard.max_tokens {
+                if params.max_tokens > cap {
+                    tracing::warn!(
+                        requested = params.max_tokens,
+                        cap,
+                        "capping MCP sampling maxTokens"
+                    );
+                    params.max_tokens = cap;
+                }
+            }
+            inner(params).await
+        })
+    })
+}
+
 /// Build a [`SamplingHandler`] backed by any [`ChatClient`]: converts the
 /// server's `sampling/createMessage` request into core [`Message`]s
 /// (`messages`/`systemPrompt`/`maxTokens`/`temperature`/`stopSequences` map
@@ -135,7 +261,7 @@ impl CreateMessageResult {
 /// first text (or, failing that, image/audio) content item of the
 /// response's first message, and never sets `stopReason` — Python's own
 /// callback doesn't either, relying on the field's `None` default.
-pub fn chat_client_sampling_handler(client: Arc<dyn ChatClient>) -> SamplingHandler {
+fn unguarded_chat_client_sampling_handler(client: Arc<dyn ChatClient>) -> SamplingHandler {
     Arc::new(move |params: CreateMessageParams| {
         let client = client.clone();
         Box::pin(async move {
@@ -494,7 +620,8 @@ mod tests {
             text: "Paris is the capital of France.",
             model: "stub-model",
         });
-        let handler = chat_client_sampling_handler(client);
+        let handler =
+            chat_client_sampling_handler_with(client, SamplingGuard::default().approve_all());
         let params = CreateMessageParams {
             messages: vec![SamplingMessage {
                 role: "user".to_string(),
@@ -514,6 +641,71 @@ mod tests {
         assert_eq!(result.content["text"], "Paris is the capital of France.");
         assert_eq!(result.model, "stub-model");
         assert!(result.stop_reason.is_none());
+    }
+
+    /// Records the `max_tokens` each forwarded request carried.
+    struct CountingClient(std::sync::Mutex<Vec<Option<u32>>>);
+
+    #[async_trait]
+    impl ChatClient for CountingClient {
+        async fn get_response(&self, _m: Vec<Message>, o: ChatOptions) -> Result<ChatResponse> {
+            self.0.lock().unwrap().push(o.max_tokens);
+            Ok(ChatResponse::from_text("ok"))
+        }
+        async fn get_streaming_response(
+            &self,
+            _m: Vec<Message>,
+            _o: ChatOptions,
+        ) -> Result<agent_framework_core::client::ChatStream> {
+            unreachable!()
+        }
+    }
+
+    fn request(max_tokens: u32) -> CreateMessageParams {
+        CreateMessageParams {
+            messages: vec![SamplingMessage {
+                role: "user".to_string(),
+                content: json!({"type": "text", "text": "hi"}),
+            }],
+            model_preferences: None,
+            system_prompt: None,
+            include_context: None,
+            temperature: None,
+            max_tokens,
+            stop_sequences: None,
+            metadata: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn the_default_guard_denies_without_reaching_the_model() {
+        let client = Arc::new(CountingClient(Default::default()));
+        let handler = chat_client_sampling_handler(client.clone());
+        let err = handler(request(10)).await.unwrap_err().to_string();
+        assert!(err.contains("disabled by default"), "{err}");
+        assert!(client.0.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_guard_caps_tokens_limits_requests_and_honours_refusals() {
+        let client = Arc::new(CountingClient(Default::default()));
+        let handler = chat_client_sampling_handler_with(
+            client.clone(),
+            SamplingGuard::default()
+                .approval(|p: &CreateMessageParams| {
+                    let ok = p.max_tokens != 7;
+                    async move { ok }
+                })
+                .max_requests(Some(3)),
+        );
+        handler(request(10_000)).await.unwrap();
+        handler(request(100)).await.unwrap();
+        let refused = handler(request(7)).await.unwrap_err().to_string();
+        assert!(refused.contains("denied by the SamplingGuard"), "{refused}");
+        // The refused request still counted against the limit, as upstream.
+        let limited = handler(request(100)).await.unwrap_err().to_string();
+        assert!(limited.contains("rate limit"), "{limited}");
+        assert_eq!(*client.0.lock().unwrap(), vec![Some(4096), Some(100)]);
     }
 
     #[tokio::test]
@@ -536,7 +728,10 @@ mod tests {
                 unreachable!()
             }
         }
-        let handler = chat_client_sampling_handler(Arc::new(EmptyClient));
+        let handler = chat_client_sampling_handler_with(
+            Arc::new(EmptyClient),
+            SamplingGuard::default().approve_all(),
+        );
         let params = CreateMessageParams {
             messages: vec![SamplingMessage {
                 role: "user".to_string(),

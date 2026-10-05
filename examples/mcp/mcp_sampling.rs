@@ -17,7 +17,7 @@
 
 use std::sync::Arc;
 
-use agent_framework::mcp::chat_client_sampling_handler;
+use agent_framework::mcp::{chat_client_sampling_handler_with, SamplingGuard};
 use agent_framework::prelude::*;
 
 #[tokio::main]
@@ -30,7 +30,14 @@ async fn main() -> Result<()> {
     // The handler holds its own client; the server's sampling requests do
     // NOT go through the agent below (that's the point -- the server drives
     // these calls, with the host app deciding which model answers them).
-    let handler = chat_client_sampling_handler(Arc::new(client.clone()) as Arc<dyn ChatClient>);
+    //
+    // Sampling is denied unless a guard approves it: an MCP server is an
+    // untrusted third party. This example opts in to everything, with the
+    // default 4096-token cap and 25-request limit still applied.
+    let handler = chat_client_sampling_handler_with(
+        Arc::new(client.clone()) as Arc<dyn ChatClient>,
+        SamplingGuard::default().approve_all(),
+    );
 
     let mcp = McpStdioTool::new("everything", "npx")
         .args(["-y", "@modelcontextprotocol/server-everything"])
