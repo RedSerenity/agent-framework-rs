@@ -8,6 +8,9 @@
 //!   automatic function-invocation loop.
 //! - [`agent`] — the [`SupportsAgentRun`](agent::SupportsAgentRun) trait and
 //!   [`Agent`](agent::Agent).
+//! - [`agent_hooks`] — AGENT-HOOKS-0.1 enforcement: fail-closed policy
+//!   interception across the agent, model-call and tool-call seams via
+//!   [`AgentHooks`](agent_hooks::AgentHooks) (experimental).
 //! - [`evaluation`] — provider-agnostic evaluation of agents and workflows:
 //!   [`EvalItem`](evaluation::EvalItem)s, the
 //!   [`Evaluator`](evaluation::Evaluator) trait, the API-free
@@ -53,6 +56,7 @@
 //! ```
 
 pub mod agent;
+pub mod agent_hooks;
 pub mod client;
 pub mod compaction;
 pub mod error;
@@ -79,6 +83,10 @@ pub mod prelude {
     pub use crate::agent::{
         Agent, AgentBuilder, AgentRunOptions, AgentRunStream, AgentToolStreamCallback,
         AsToolOptions, SupportsAgentRun,
+    };
+    pub use crate::agent_hooks::{
+        interceptor_fn, AgentHooks, AgentHooksOptions, InterceptionBlocked, InterceptionRecord,
+        Interceptor, Verdict,
     };
     pub use crate::client::{
         ChatClient, ChatStream, EmbeddingClient, FunctionInvokingChatClient, RetryOn, RetryPolicy,

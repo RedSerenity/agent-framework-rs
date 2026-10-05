@@ -140,6 +140,16 @@ pub enum Error {
     #[error("middleware failure: {0}")]
     MiddlewareFailure(String),
 
+    /// An agent-hooks interception point blocked the guarded action.
+    ///
+    /// Raised by the [`agent_hooks`](crate::agent_hooks) enforcement when a
+    /// verdict denies at `input`, `pre_model_call`, `post_model_call` or
+    /// `output` (and, for `host_error:*` failures of the enforcement layer
+    /// itself, at the tool seam). Carries the interception record. Mirrors
+    /// upstream `agent_hooks.InterceptionBlocked`.
+    #[error("{0}")]
+    InterceptionBlocked(Box<crate::agent_hooks::InterceptionBlocked>),
+
     /// A workflow validation or execution error.
     #[error("workflow error: {0}")]
     Workflow(String),
@@ -269,6 +279,15 @@ impl Error {
     /// absorbing into a tool-error result.
     pub fn is_middleware_failure(&self) -> bool {
         matches!(self, Error::MiddlewareFailure(_))
+    }
+
+    /// The agent-hooks block this error carries, if it is an
+    /// [`Error::InterceptionBlocked`].
+    pub fn interception_blocked(&self) -> Option<&crate::agent_hooks::InterceptionBlocked> {
+        match self {
+            Error::InterceptionBlocked(blocked) => Some(blocked),
+            _ => None,
+        }
     }
 }
 

@@ -21,10 +21,11 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
 schemars = { workspace = true }
+# `jcs-sha256` context identities for agent-hooks records, and the digest
+# `FileSessionStore` names an over-long id by.
+sha2 = "0.10"
 tokio-stream = { workspace = true }
 pin-project-lite = { workspace = true }
-# `FileSessionStore` names an over-long id by its digest.
-sha2 = "0.10"
 # Optional: GenAI metrics behind the `otel-metrics` feature. API crate only —
 # no SDK/exporter is pulled in; see `observability` module docs.
 opentelemetry = { workspace = true, optional = true }

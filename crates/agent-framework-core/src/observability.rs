@@ -190,6 +190,7 @@ pub fn error_type(err: &Error) -> String {
         Error::Content(_) => "content",
         Error::Tool(_) => "tool",
         Error::MiddlewareFailure(_) => "middleware_failure",
+        Error::InterceptionBlocked(_) => "interception_blocked",
         Error::Service(_) => "service",
         Error::ServiceStatus { .. } => "service",
         Error::ServiceInvalidAuth { .. } => "service_invalid_auth",

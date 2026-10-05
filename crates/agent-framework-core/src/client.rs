@@ -535,9 +535,13 @@ async fn execute_tool_call(
                 }) as crate::tools::BoxFuture<Result<FunctionInvocationContext>>
             });
 
-            let ctx = FunctionInvocationContext::new(call.name.clone(), args)
+            let mut ctx = FunctionInvocationContext::new(call.name.clone(), args)
                 .with_session(session.cloned())
                 .with_tools(live_tools.cloned());
+            // The model's call id, for middleware that correlates a call with
+            // its request (mirrors upstream's `metadata["call_id"]`).
+            ctx.metadata
+                .insert("call_id".to_string(), Value::String(call.call_id.clone()));
             match function_middleware.execute(ctx, terminal).await {
                 Ok(ctx) => Ok(ToolCallOutcome {
                     executed: true,
