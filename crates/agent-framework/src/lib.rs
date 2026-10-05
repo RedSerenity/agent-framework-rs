@@ -31,6 +31,8 @@
 //! | `copilotstudio` | [`agent_framework_copilotstudio`] — Copilot Studio agents | no |
 //! | `purview` | [`agent_framework_purview`] — Purview compliance middleware | no |
 //! | `harness` | [`agent_framework_harness`] — batteries-included harness agent (todos, modes, file access, file memory, background agents, tool approval, looping) | no |
+//! | `postgres` | [`agent_framework_postgres`] — PostgreSQL / pgvector vector store | no |
+//! | `sql-server` | [`agent_framework_sql_server`] — SQL Server / Azure SQL native `VECTOR` store | no |
 //!
 //! `full` enables everything.
 //!
@@ -151,6 +153,14 @@ pub use agent_framework_purview as purview;
 /// and looping (enable the `harness` feature).
 #[cfg(feature = "harness")]
 pub use agent_framework_harness as harness;
+/// PostgreSQL / pgvector vector store (enable the `postgres` feature).
+#[cfg(feature = "postgres")]
+pub use agent_framework_postgres as postgres;
+
+/// SQL Server / Azure SQL native `VECTOR` store (enable the `sql-server`
+/// feature).
+#[cfg(feature = "sql-server")]
+pub use agent_framework_sql_server as sql_server;
 
 /// Commonly used imports for building agents and workflows.
 pub mod prelude {

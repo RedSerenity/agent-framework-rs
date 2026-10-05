@@ -1,0 +1,43 @@
+[package]
+name = "agent-framework-postgres"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "PostgreSQL / pgvector vector store for agent-framework-rs"
+
+[dependencies]
+agent-framework-core = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+bytes = { workspace = true }
+# The async driver. Typed parameter binding for the column types this
+# connector declares: JSON for `jsonb`, `uuid` for `uuid`, and `time` for
+# `date` / `timestamptz` — each feature only adds `ToSql`/`FromSql` impls.
+tokio-postgres = { version = "0.7", default-features = false, features = [
+    "runtime",
+    "with-serde_json-1",
+    "with-uuid-1",
+    "with-time-0_3",
+] }
+# Upstream owns a `psycopg_pool.AsyncConnectionPool` (min 1, max 10); this
+# is the tokio-postgres equivalent, and a caller can hand in their own.
+deadpool-postgres = { version = "0.14", default-features = false, features = ["rt_tokio_1"] }
+# TLS for managed PostgreSQL (Azure Database for PostgreSQL, RDS, ...), all
+# pure Rust and already in this workspace's graph through reqwest.
+tokio-postgres-rustls = "0.13"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+webpki-roots = "1"
+time = { version = "0.3", features = ["parsing", "formatting", "macros"] }
+# Index names are `af_vector_` + a SHA-256 prefix, exactly as upstream names them.
+sha2 = "0.10"
+
+[dev-dependencies]
+tokio = { workspace = true }

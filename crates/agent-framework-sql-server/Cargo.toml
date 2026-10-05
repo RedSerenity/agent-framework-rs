@@ -1,0 +1,35 @@
+[package]
+name = "agent-framework-sql-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "SQL Server / Azure SQL native VECTOR store for agent-framework-rs"
+
+[dependencies]
+agent-framework-core = { workspace = true }
+# `TokenCredential` and the Entra ID credential chain, so
+# `Authentication=ActiveDirectoryDefault` / `ActiveDirectoryMSI` connection
+# strings authenticate with the same credential objects every other Azure
+# crate in this workspace uses.
+agent-framework-azure = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+# Pure-Rust TDS. `rustls` keeps the build free of OpenSSL; `time` gives the
+# native DATE / DATETIME2 bindings.
+tiberius = { version = "0.12", default-features = false, features = ["tds73", "rustls", "time"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+time = { version = "0.3", features = ["parsing", "formatting", "macros"] }
+# Index names are `af_sql_` + a SHA-256 prefix, exactly as upstream names them.
+sha2 = "0.10"
+
+[dev-dependencies]
+tokio = { workspace = true }

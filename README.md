@@ -120,6 +120,8 @@ parity with the Python and .NET implementations.
 | [`agent-framework-copilotstudio`](crates/agent-framework-copilotstudio) | Microsoft Copilot Studio agent client (Direct-to-Engine). |
 | [`agent-framework-purview`](crates/agent-framework-purview) | Microsoft Purview compliance middleware (`processContent` DLP checks). |
 | [`agent-framework-harness`](crates/agent-framework-harness) | Batteries-included harness agent: todos, plan/execute modes, sandboxed file access, file-backed memory, background sub-agents, "don't ask again" tool approval, and agent looping. |
+| [`agent-framework-postgres`](crates/agent-framework-postgres) | PostgreSQL + pgvector vector store (`tokio-postgres`, pooled; exact, HNSW, and IVFFlat search; parameterized portable filters). |
+| [`agent-framework-sql-server`](crates/agent-framework-sql-server) | SQL Server 2025 / Azure SQL native `VECTOR` store (pure-Rust TDS via `tiberius`; SQL login or Entra ID; exact `VECTOR_DISTANCE` search). |
 | [`agent-framework`](crates/agent-framework) | Umbrella crate re-exporting the core plus everything above behind cargo features. |
 
 ## Quick start
@@ -212,6 +214,8 @@ unconditionally, plus each companion crate behind a cargo feature:
 | `copilotstudio` | [`agent-framework-copilotstudio`](crates/agent-framework-copilotstudio) — Copilot Studio agents | no |
 | `purview` | [`agent-framework-purview`](crates/agent-framework-purview) — Purview compliance middleware | no |
 | `harness` | [`agent-framework-harness`](crates/agent-framework-harness) — batteries-included harness agent | no |
+| `postgres` | [`agent-framework-postgres`](crates/agent-framework-postgres) — PostgreSQL / pgvector vector store | no |
+| `sql-server` | [`agent-framework-sql-server`](crates/agent-framework-sql-server) — SQL Server / Azure SQL native `VECTOR` store | no |
 | `otel-metrics` | GenAI metrics (token-usage / operation-duration / function-invocation histograms) via the `opentelemetry` API crate | no |
 | `full` | all of the above except `otel-metrics` | no |
 
@@ -278,6 +282,7 @@ one-to-one:
 | `_harness` (`create_harness_agent`) / .NET `Microsoft.Agents.AI.Harness` | [`agent-framework-harness`](crates/agent-framework-harness) (`HarnessAgent`, `TodoProvider`, `AgentModeProvider`, `FileAccessProvider`, `FileMemoryProvider`, `MemoryContextProvider`, `BackgroundAgentsProvider`, `ToolApprovalAgent`, `LoopAgent`) |
 | `qdrant` package | [`agent-framework-qdrant`](crates/agent-framework-qdrant) (`QdrantStore`, `QdrantCollection`) |
 | (.NET `Microsoft.Agents.AI.Valkey`) | [`agent-framework-redis`](crates/agent-framework-redis) (`ValkeyChatHistoryProvider`) |
+| `postgres` / `sql-server` packages | [`agent-framework-postgres`](crates/agent-framework-postgres) / [`agent-framework-sql-server`](crates/agent-framework-sql-server) |
 
 Cross-cutting behavior implemented in Python via class decorators
 (`use_function_invocation`, `use_*_middleware`) is expressed in Rust as wrapper

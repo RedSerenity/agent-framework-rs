@@ -39,6 +39,8 @@ qdrant = ["dep:agent-framework-qdrant"]
 copilotstudio = ["dep:agent-framework-copilotstudio"]
 purview = ["dep:agent-framework-purview"]
 harness = ["dep:agent-framework-harness"]
+postgres = ["dep:agent-framework-postgres"]
+sql-server = ["dep:agent-framework-sql-server"]
 # GenAI metrics (token-usage / operation-duration / function-invocation
 # histograms) via the opentelemetry API crate — see agent-framework-core's
 # observability module docs.
@@ -73,6 +75,8 @@ full = [
     "copilotstudio",
     "purview",
     "harness",
+    "postgres",
+    "sql-server",
 ]
 
 [dependencies]
@@ -100,6 +104,8 @@ agent-framework-qdrant = { workspace = true, optional = true }
 agent-framework-copilotstudio = { workspace = true, optional = true }
 agent-framework-purview = { workspace = true, optional = true }
 agent-framework-harness = { workspace = true, optional = true }
+agent-framework-postgres = { workspace = true, optional = true }
+agent-framework-sql-server = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

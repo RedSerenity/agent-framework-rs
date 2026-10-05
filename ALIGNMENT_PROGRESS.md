@@ -73,9 +73,11 @@ computer-use / shell tools; the `claude` and `typesafe` packages; sandboxes
 (Hyperlight, Monty, shell tools, LocalCodeAct); hosting for Telegram,
 ChatKit and Foundry; DevUI's conversations API and React UI; A2A server push
 notifications / resubscribe; `lab`; and the ~130 upstream commits after
-`dc8e226`. Connector ports for Postgres, SQL Server, MongoDB, DocumentDB,
-DuckDB, Cosmos memory and Content Understanding were in flight when this
-push stopped — see the CHANGELOG for which landed.
+`dc8e226`. Also still open: the MongoDB, Azure DocumentDB and DuckDB vector
+stores, the Cosmos DB memory provider, and Azure AI Content Understanding —
+those ports were stopped before they compiled and did not land. PostgreSQL /
+pgvector (live-tested against PostgreSQL 16 + pgvector 0.8.7) and SQL Server
+(offline only; no server available) did land.
 
 ## Tool-call serialization on both hosting surfaces (same upstream baseline, `dc8e226`)
 

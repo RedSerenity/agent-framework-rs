@@ -25,6 +25,8 @@ members = [
     "crates/agent-framework-copilotstudio",
     "crates/agent-framework-purview",
     "crates/agent-framework-harness",
+    "crates/agent-framework-postgres",
+    "crates/agent-framework-sql-server",
     "crates/agent-framework",
     "examples",
 ]
@@ -141,6 +143,8 @@ agent-framework-qdrant = { path = "crates/agent-framework-qdrant", version = "0.
 agent-framework-copilotstudio = { path = "crates/agent-framework-copilotstudio", version = "0.9.0" }
 agent-framework-purview = { path = "crates/agent-framework-purview", version = "0.9.0" }
 agent-framework-harness = { path = "crates/agent-framework-harness", version = "0.9.0" }
+agent-framework-postgres = { path = "crates/agent-framework-postgres", version = "0.9.0" }
+agent-framework-sql-server = { path = "crates/agent-framework-sql-server", version = "0.9.0" }
 
 [profile.release]
 opt-level = 3
