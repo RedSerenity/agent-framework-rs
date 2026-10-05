@@ -26,6 +26,7 @@ mcp = ["dep:agent-framework-mcp"]
 a2a = ["dep:agent-framework-a2a"]
 declarative = ["dep:agent-framework-declarative"]
 hosting = ["dep:agent-framework-hosting"]
+hosting-mcp = ["dep:agent-framework-hosting-mcp"]
 redis = ["dep:agent-framework-redis"]
 mem0 = ["dep:agent-framework-mem0"]
 foundry = ["dep:agent-framework-foundry"]
@@ -55,6 +56,7 @@ full = [
     "a2a",
     "declarative",
     "hosting",
+    "hosting-mcp",
     "redis",
     "mem0",
     "foundry",
@@ -79,6 +81,7 @@ agent-framework-mcp = { workspace = true, optional = true }
 agent-framework-a2a = { workspace = true, optional = true }
 agent-framework-declarative = { workspace = true, optional = true }
 agent-framework-hosting = { workspace = true, optional = true }
+agent-framework-hosting-mcp = { workspace = true, optional = true }
 agent-framework-redis = { workspace = true, optional = true }
 agent-framework-mem0 = { workspace = true, optional = true }
 agent-framework-foundry = { workspace = true, optional = true }

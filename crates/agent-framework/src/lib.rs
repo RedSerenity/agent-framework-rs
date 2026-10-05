@@ -21,6 +21,7 @@
 //! | `a2a` | [`agent_framework_a2a`] — Agent2Agent protocol client | no |
 //! | `declarative` | [`agent_framework_declarative`] — YAML/JSON agents & workflows | no |
 //! | `hosting` | [`agent_framework_hosting`] — serve agents over HTTP (DevUI-style, A2A, OpenAI-compatible) | no |
+//! | `hosting-mcp` | [`agent_framework_hosting_mcp`] — expose agents and workflows as MCP tools (stdio / streamable HTTP server) | no |
 //! | `redis` | [`agent_framework_redis`] — Redis chat-message store & context provider | no |
 //! | `mem0` | [`agent_framework_mem0`] — Mem0 long-term memory provider | no |
 //! | `foundry` | [`agent_framework_foundry`] — Azure AI Foundry Responses API chat client + Prompt Agents | no |
@@ -102,6 +103,10 @@ pub use agent_framework_declarative as declarative;
 /// HTTP hosting: DevUI-style, A2A, and OpenAI-compatible serving (enable the `hosting` feature).
 #[cfg(feature = "hosting")]
 pub use agent_framework_hosting as hosting;
+
+/// Agents and workflows served as MCP tools (enable the `hosting-mcp` feature).
+#[cfg(feature = "hosting-mcp")]
+pub use agent_framework_hosting_mcp as hosting_mcp;
 
 /// Redis-backed chat-message store and context provider (enable the `redis` feature).
 #[cfg(feature = "redis")]

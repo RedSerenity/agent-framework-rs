@@ -28,7 +28,8 @@ the order does not matter:
    `agent-framework-redis`
 3. **Tier 2** — `agent-framework-azure`, `agent-framework-foundry-local`,
    `agent-framework-github-copilot`, `agent-framework-mistral`,
-   `agent-framework-ollama` (need `openai`)
+   `agent-framework-ollama` (need `openai`), and
+   `agent-framework-hosting-mcp` (needs `hosting` + `mcp`)
 4. **Tier 3** — `agent-framework-anthropic` (needs `azure` + `bedrock`),
    `agent-framework-azure-ai-search`, `agent-framework-cosmos`,
    `agent-framework-foundry` (need `azure`)
@@ -41,7 +42,7 @@ cargo publish -p agent-framework-core
 for c in a2a bedrock copilotstudio declarative gemini hosting mcp mem0 openai purview redis; do
   cargo publish -p agent-framework-$c
 done
-for c in azure foundry-local github-copilot mistral ollama; do
+for c in azure foundry-local github-copilot mistral ollama hosting-mcp; do
   cargo publish -p agent-framework-$c
 done
 for c in anthropic azure-ai-search cosmos foundry; do

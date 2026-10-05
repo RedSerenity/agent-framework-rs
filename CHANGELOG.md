@@ -57,6 +57,15 @@ nowhere), so a run that paused twice could not be resumed the second time.
   checkpoint storage (`AgentHost::with_checkpoint_storage_factory`), and a
   paused run resumes when a later request carries DevUI's
   `workflow_hil_response` content, or names `extra_body.checkpoint_id`.
+- **`agent-framework-hosting-mcp`**, a new crate porting upstream's
+  `agent-framework-hosting-mcp`: `mcp_to_run` / `mcp_from_run`,
+  `AgentMcpTool` (schema generation and call parsing from one definition,
+  chat-option arguments, `AgentState` sessions keyed by an argument) and
+  `WorkflowMcpTool`. Upstream relies on the MCP Python SDK for the server;
+  with no such SDK here, `McpServer` provides a minimal one (`initialize`,
+  `ping`, `tools/list`, `tools/call`) over stdio and streamable HTTP, with
+  `Mcp-Session-Id` sessions. Available as the facade's `hosting-mcp`
+  feature.
 - `Workflow::run_with_checkpointing` — checkpoint storage for one run,
   overriding the build-time storage.
 - `AgentSession::with_session_id`.

@@ -20,6 +20,7 @@ dependencies = [
  "agent-framework-gemini",
  "agent-framework-github-copilot",
  "agent-framework-hosting",
+ "agent-framework-hosting-mcp",
  "agent-framework-mcp",
  "agent-framework-mem0",
  "agent-framework-mistral",
@@ -311,6 +312,24 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tower",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "agent-framework-hosting-mcp"
+version = "0.9.0"
+dependencies = [
+ "agent-framework-core",
+ "agent-framework-hosting",
+ "agent-framework-mcp",
+ "async-trait",
+ "axum",
+ "base64",
+ "futures",
+ "reqwest 0.12.28",
+ "serde_json",
+ "tokio",
  "tracing",
  "uuid",
 ]
