@@ -1,0 +1,36 @@
+[package]
+name = "agent-framework-harness"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Batteries-included harness agent for agent-framework-rs: todos, modes, file access, file-backed memory, background sub-agents, tool-approval policy, and agent looping"
+
+[dependencies]
+agent-framework-core = { workspace = true }
+tokio = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+# Model-supplied grep patterns. `regex-automata`'s meta engine (the engine
+# behind the `regex` crate) guarantees linear-time matching, so a
+# catastrophically backtracking pattern such as `(a|a)*$` cannot stall the
+# process — the property upstream reaches for with the `regex` PyPI package's
+# match timeout. Already in the workspace lockfile.
+regex-automata = "0.4"
+# Collision-resistant digest for over-long storage path segments (mirrors
+# upstream's `_storage_key_segment` length cap). Already in the lockfile.
+sha2 = "0.10"
+# `O_NOFOLLOW` for the no-follow open in `FileSystemAgentFileStore`.
+libc = "0.2"
+
+[dev-dependencies]
+tokio = { workspace = true }

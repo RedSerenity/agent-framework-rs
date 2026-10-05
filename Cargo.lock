@@ -19,6 +19,7 @@ dependencies = [
  "agent-framework-foundry-local",
  "agent-framework-gemini",
  "agent-framework-github-copilot",
+ "agent-framework-harness",
  "agent-framework-hosting",
  "agent-framework-hosting-mcp",
  "agent-framework-mcp",
@@ -293,6 +294,23 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "agent-framework-harness"
+version = "0.9.0"
+dependencies = [
+ "agent-framework-core",
+ "async-trait",
+ "futures",
+ "libc",
+ "regex-automata",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
  "tracing",
  "uuid",
 ]

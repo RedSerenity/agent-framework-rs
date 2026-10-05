@@ -594,6 +594,49 @@ fn collect_approval_responses(messages: &[Message]) -> Vec<FunctionApprovalRespo
     out
 }
 
+/// Drop approval contents that an earlier run already resolved: an approval
+/// request or response followed, later in the conversation, by a function
+/// result for its call.
+///
+/// Persisted history replays a resolved approval exchange on every later
+/// run — the assistant's call plus its approval request, the approval
+/// response the caller sent, then (see the tool loop) the result its
+/// execution produced. Treating such a response as fresh input would execute
+/// the approved call again on every turn, and the request is redundant next
+/// to the call it was raised for. Only a result *after* the content counts,
+/// so a provider reusing a `call_id` for a new call that is awaiting approval
+/// is not mistaken for an answered one. Messages left empty are removed.
+fn strip_resolved_approval_contents(messages: &mut Vec<Message>) {
+    let mut resolved: Vec<(usize, usize)> = Vec::new();
+    for (mi, msg) in messages.iter().enumerate() {
+        for (ci, content) in msg.contents.iter().enumerate() {
+            let call_id = match content {
+                Content::FunctionApprovalResponse(resp) => resp.function_call.call_id.as_str(),
+                Content::FunctionApprovalRequest(req) => req.function_call.call_id.as_str(),
+                _ => continue,
+            };
+            if call_id.is_empty() {
+                continue;
+            }
+            let answered_later = msg.contents[ci + 1..]
+                .iter()
+                .chain(messages[mi + 1..].iter().flat_map(|m| m.contents.iter()))
+                .filter_map(Content::as_function_result)
+                .any(|r| r.call_id == call_id);
+            if answered_later {
+                resolved.push((mi, ci));
+            }
+        }
+    }
+    if resolved.is_empty() {
+        return;
+    }
+    for (mi, ci) in resolved.into_iter().rev() {
+        messages[mi].contents.remove(ci);
+    }
+    messages.retain(|m| !m.contents.is_empty());
+}
+
 /// Rewrite approval request/response contents in place, mirroring Python's
 /// `_replace_approval_contents_with_results`.
 ///
@@ -778,6 +821,9 @@ impl<C: ChatClient> ChatClient for FunctionInvokingChatClient<C> {
             let live_tools = LiveToolList::new(std::mem::take(&mut options.tools));
 
             let mut conversation = messages;
+            // Approval exchanges an earlier run already resolved come back
+            // with persisted history; they must not execute again.
+            strip_resolved_approval_contents(&mut conversation);
             let mut carried: Vec<Message> = Vec::new();
             let mut consecutive_errors = 0usize;
             // Started here rather than at the first execution: the clock is a
@@ -876,6 +922,33 @@ impl<C: ChatClient> ChatClient for FunctionInvokingChatClient<C> {
                         }
                     }
                     budget.record(executed);
+                    // Surface the resolved results in the response, so a
+                    // history provider records each approved call's result
+                    // (or its rejection) next to the approval that produced
+                    // it. Without them, persisted history would hold a bare
+                    // approval response, and every later run on the session
+                    // would execute the approved call again.
+                    let resolved: Vec<Content> = approval_responses
+                        .iter()
+                        .filter_map(|resp| {
+                            let call = &resp.function_call;
+                            if resp.approved {
+                                let key = call.id.clone().unwrap_or_else(|| call.call_id.clone());
+                                approved_results
+                                    .get(&key)
+                                    .cloned()
+                                    .map(Content::FunctionResult)
+                            } else {
+                                Some(Content::FunctionResult(FunctionResultContent::new(
+                                    call.call_id.clone(),
+                                    Some(Value::String(REJECTION_MESSAGE.to_string())),
+                                )))
+                            }
+                        })
+                        .collect();
+                    if !resolved.is_empty() {
+                        carried.push(Message::with_contents(Role::tool(), resolved));
+                    }
                     replace_approval_contents_with_results(&mut conversation, &approved_results);
                     if had_error {
                         consecutive_errors += 1;
