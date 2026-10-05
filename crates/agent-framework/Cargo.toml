@@ -34,6 +34,8 @@ azure-ai-search = ["dep:agent-framework-azure-ai-search"]
 cosmos = ["dep:agent-framework-cosmos"]
 copilotstudio = ["dep:agent-framework-copilotstudio"]
 purview = ["dep:agent-framework-purview"]
+postgres = ["dep:agent-framework-postgres"]
+sql-server = ["dep:agent-framework-sql-server"]
 # GenAI metrics (token-usage / operation-duration / function-invocation
 # histograms) via the opentelemetry API crate — see agent-framework-core's
 # observability module docs.
@@ -64,6 +66,8 @@ full = [
     "cosmos",
     "copilotstudio",
     "purview",
+    "postgres",
+    "sql-server",
 ]
 
 [dependencies]
@@ -89,6 +93,8 @@ agent-framework-azure-ai-search = { workspace = true, optional = true }
 agent-framework-cosmos = { workspace = true, optional = true }
 agent-framework-copilotstudio = { workspace = true, optional = true }
 agent-framework-purview = { workspace = true, optional = true }
+agent-framework-postgres = { workspace = true, optional = true }
+agent-framework-sql-server = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

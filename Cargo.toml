@@ -23,6 +23,8 @@ members = [
     "crates/agent-framework-cosmos",
     "crates/agent-framework-copilotstudio",
     "crates/agent-framework-purview",
+    "crates/agent-framework-postgres",
+    "crates/agent-framework-sql-server",
     "crates/agent-framework",
     "examples",
 ]
@@ -137,6 +139,8 @@ agent-framework-azure-ai-search = { path = "crates/agent-framework-azure-ai-sear
 agent-framework-cosmos = { path = "crates/agent-framework-cosmos", version = "0.9.0" }
 agent-framework-copilotstudio = { path = "crates/agent-framework-copilotstudio", version = "0.9.0" }
 agent-framework-purview = { path = "crates/agent-framework-purview", version = "0.9.0" }
+agent-framework-postgres = { path = "crates/agent-framework-postgres", version = "0.9.0" }
+agent-framework-sql-server = { path = "crates/agent-framework-sql-server", version = "0.9.0" }
 
 [profile.release]
 opt-level = 3

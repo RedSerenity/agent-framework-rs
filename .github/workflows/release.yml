@@ -7,7 +7,7 @@ name: Release
 #                   everything downstream is skipped (ordinary merges are
 #                   no-ops; only a version bump releases).
 #   2. `verify`   — full workspace verification at the merge commit.
-#   3. `release`  — publishes all 22 crates to crates.io tier by tier
+#   3. `release`  — publishes all 24 crates to crates.io tier by tier
 #                   (PUBLISHING.md), then tags v<version> and creates the
 #                   GitHub Release (notes from the matching CHANGELOG.md
 #                   section). Publishing comes FIRST so a failed publish
@@ -153,13 +153,13 @@ jobs:
             return 1
           }
           publish agent-framework-core
-          for c in a2a bedrock copilotstudio declarative gemini hosting mcp mem0 openai purview redis; do
+          for c in a2a bedrock copilotstudio declarative gemini hosting mcp mem0 openai postgres purview redis; do
             publish agent-framework-$c
           done
           for c in azure foundry-local github-copilot mistral ollama; do
             publish agent-framework-$c
           done
-          for c in anthropic azure-ai-search cosmos foundry; do
+          for c in anthropic azure-ai-search cosmos foundry sql-server; do
             publish agent-framework-$c
           done
           publish agent-framework

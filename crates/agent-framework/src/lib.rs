@@ -29,6 +29,8 @@
 //! | `cosmos` | [`agent_framework_cosmos`] — Cosmos DB NoSQL message store, workflow checkpoints, and vector store | no |
 //! | `copilotstudio` | [`agent_framework_copilotstudio`] — Copilot Studio agents | no |
 //! | `purview` | [`agent_framework_purview`] — Purview compliance middleware | no |
+//! | `postgres` | [`agent_framework_postgres`] — PostgreSQL / pgvector vector store | no |
+//! | `sql-server` | [`agent_framework_sql_server`] — SQL Server / Azure SQL native `VECTOR` store | no |
 //!
 //! `full` enables everything.
 //!
@@ -138,6 +140,15 @@ pub use agent_framework_copilotstudio as copilotstudio;
 /// Microsoft Purview compliance middleware (enable the `purview` feature).
 #[cfg(feature = "purview")]
 pub use agent_framework_purview as purview;
+
+/// PostgreSQL / pgvector vector store (enable the `postgres` feature).
+#[cfg(feature = "postgres")]
+pub use agent_framework_postgres as postgres;
+
+/// SQL Server / Azure SQL native `VECTOR` store (enable the `sql-server`
+/// feature).
+#[cfg(feature = "sql-server")]
+pub use agent_framework_sql_server as sql_server;
 
 /// Commonly used imports for building agents and workflows.
 pub mod prelude {

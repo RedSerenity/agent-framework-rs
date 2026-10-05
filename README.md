@@ -118,6 +118,8 @@ parity with the Python and .NET implementations.
 | [`agent-framework-cosmos`](crates/agent-framework-cosmos) | Azure Cosmos DB NoSQL `ChatMessageStore`, workflow checkpoints, and vector store (master key or Entra ID, REST). |
 | [`agent-framework-copilotstudio`](crates/agent-framework-copilotstudio) | Microsoft Copilot Studio agent client (Direct-to-Engine). |
 | [`agent-framework-purview`](crates/agent-framework-purview) | Microsoft Purview compliance middleware (`processContent` DLP checks). |
+| [`agent-framework-postgres`](crates/agent-framework-postgres) | PostgreSQL + pgvector vector store (`tokio-postgres`, pooled; exact, HNSW, and IVFFlat search; parameterized portable filters). |
+| [`agent-framework-sql-server`](crates/agent-framework-sql-server) | SQL Server 2025 / Azure SQL native `VECTOR` store (pure-Rust TDS via `tiberius`; SQL login or Entra ID; exact `VECTOR_DISTANCE` search). |
 | [`agent-framework`](crates/agent-framework) | Umbrella crate re-exporting the core plus everything above behind cargo features. |
 
 ## Quick start
@@ -208,6 +210,8 @@ unconditionally, plus each companion crate behind a cargo feature:
 | `cosmos` | [`agent-framework-cosmos`](crates/agent-framework-cosmos) — Cosmos DB NoSQL message store, checkpoints, and vector store | no |
 | `copilotstudio` | [`agent-framework-copilotstudio`](crates/agent-framework-copilotstudio) — Copilot Studio agents | no |
 | `purview` | [`agent-framework-purview`](crates/agent-framework-purview) — Purview compliance middleware | no |
+| `postgres` | [`agent-framework-postgres`](crates/agent-framework-postgres) — PostgreSQL / pgvector vector store | no |
+| `sql-server` | [`agent-framework-sql-server`](crates/agent-framework-sql-server) — SQL Server / Azure SQL native `VECTOR` store | no |
 | `otel-metrics` | GenAI metrics (token-usage / operation-duration / function-invocation histograms) via the `opentelemetry` API crate | no |
 | `full` | all of the above except `otel-metrics` | no |
 
@@ -271,6 +275,7 @@ one-to-one:
 | `foundry` / `azure-ai-search` packages | [`agent-framework-foundry`](crates/agent-framework-foundry) / [`agent-framework-azure-ai-search`](crates/agent-framework-azure-ai-search) |
 | `copilotstudio` / `purview` packages | [`agent-framework-copilotstudio`](crates/agent-framework-copilotstudio) / [`agent-framework-purview`](crates/agent-framework-purview) |
 | (.NET `Microsoft.Agents.AI.CosmosNoSql`) | [`agent-framework-cosmos`](crates/agent-framework-cosmos) |
+| `postgres` / `sql-server` packages | [`agent-framework-postgres`](crates/agent-framework-postgres) / [`agent-framework-sql-server`](crates/agent-framework-sql-server) |
 
 Cross-cutting behavior implemented in Python via class decorators
 (`use_function_invocation`, `use_*_middleware`) is expressed in Rust as wrapper

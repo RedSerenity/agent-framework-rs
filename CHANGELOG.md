@@ -39,6 +39,39 @@ nowhere), so a run that paused twice could not be resumed the second time.
 
 ### Added
 
+- **PostgreSQL / pgvector vector store** — new crate
+  `agent-framework-postgres` (umbrella feature `postgres`), porting
+  upstream's `agent-framework-postgres` package. `PostgresStore` /
+  `PostgresCollection` implement the core `VectorStore` / `VectorCollection`
+  traits over `tokio-postgres` with a `deadpool-postgres` pool (owned, or a
+  caller's via `PostgresStore::from_pool`) and rustls TLS. Typed columns
+  (`str`/`int`/`float`/`bool`/`UUID`/`bytes`/`date`/`datetime`/`list`/`dict`),
+  `str`/`int`/`UUID` keys including server-generated ones, `vector` and
+  `halfvec` storage, multiple vector columns, transactional batch upsert
+  (`INSERT ... ON CONFLICT ... RETURNING`), filtered/ordered paging
+  (`PostgresCollection::query`), and exact or HNSW / IVFFlat search with
+  pgvector's six distance operators, `score_threshold`, `hnsw.ef_search` /
+  `ivfflat.probes`, and iterative index scans. Upstream's `_FilterCompiler`
+  is ported operator for operator: every value is a typed, cast placeholder
+  and every condition is total-boolean, so `NOT` and `ne` keep the portable
+  semantics. Identifiers are quoted and length-checked exactly as upstream.
+  Upstream's provider annotations / operation options become typed
+  `PostgresVectorOptions` and `PostgresSearchOptions`.
+- **SQL Server / Azure SQL vector store** — new crate
+  `agent-framework-sql-server` (umbrella feature `sql-server`), porting
+  upstream's `agent-framework-sql-server` package over the pure-Rust
+  `tiberius` TDS client. `SqlServerStore` / `SqlServerCollection` store
+  records in native `VECTOR(n)` columns and search with exact
+  `VECTOR_DISTANCE`, filters and threshold applied before
+  `OFFSET ... FETCH`. Each operation is one transaction on its own
+  connection; `is_committed_cleanup` identifies upstream's
+  `SqlServerCommittedCleanupException` case (committed, then the close
+  failed — do not retry). The two-valued T-SQL filter compiler, byte-exact
+  string equality, `LIKE` escaping, 2000-parameter budget, and 1000-key
+  batching are ported from upstream. `Authentication=ActiveDirectoryDefault`
+  / `ActiveDirectoryMSI` connection strings authenticate through the
+  `agent-framework-azure` credential chain, and any `TokenCredential` can be
+  supplied directly.
 - **Agent hooks** (`agent_framework_core::agent_hooks`, experimental): a port
   of upstream's AGENT-HOOKS-0.1 enforcement (`_agent_hooks.py`,
   `Microsoft.Agents.AI.AgentHooks`). `AgentHooks::new(AgentHooksOptions)` (or
