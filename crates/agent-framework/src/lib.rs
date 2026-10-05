@@ -22,11 +22,12 @@
 //! | `declarative` | [`agent_framework_declarative`] — YAML/JSON agents & workflows | no |
 //! | `hosting` | [`agent_framework_hosting`] — serve agents over HTTP (DevUI-style, A2A, OpenAI-compatible) | no |
 //! | `hosting-mcp` | [`agent_framework_hosting_mcp`] — expose agents and workflows as MCP tools (stdio / streamable HTTP server) | no |
-//! | `redis` | [`agent_framework_redis`] — Redis chat-message store & context provider | no |
+//! | `redis` | [`agent_framework_redis`] — Redis/Valkey history providers, context provider & RediSearch vector store | no |
 //! | `mem0` | [`agent_framework_mem0`] — Mem0 long-term memory provider | no |
 //! | `foundry` | [`agent_framework_foundry`] — Azure AI Foundry Responses API chat client + Prompt Agents | no |
 //! | `azure-ai-search` | [`agent_framework_azure_ai_search`] — Azure AI Search memory + vector store | no |
 //! | `cosmos` | [`agent_framework_cosmos`] — Cosmos DB NoSQL message store, workflow checkpoints, and vector store | no |
+//! | `qdrant` | [`agent_framework_qdrant`] — Qdrant vector store (REST) | no |
 //! | `copilotstudio` | [`agent_framework_copilotstudio`] — Copilot Studio agents | no |
 //! | `purview` | [`agent_framework_purview`] — Purview compliance middleware | no |
 //! | `harness` | [`agent_framework_harness`] — batteries-included harness agent (todos, modes, file access, file memory, background agents, tool approval, looping) | no |
@@ -109,7 +110,8 @@ pub use agent_framework_hosting as hosting;
 #[cfg(feature = "hosting-mcp")]
 pub use agent_framework_hosting_mcp as hosting_mcp;
 
-/// Redis-backed chat-message store and context provider (enable the `redis` feature).
+/// Redis-backed history providers (incl. Valkey), context provider and
+/// RediSearch vector store (enable the `redis` feature).
 #[cfg(feature = "redis")]
 pub use agent_framework_redis as redis;
 
@@ -131,6 +133,10 @@ pub use agent_framework_azure_ai_search as azure_ai_search;
 /// vector store (enable the `cosmos` feature).
 #[cfg(feature = "cosmos")]
 pub use agent_framework_cosmos as cosmos;
+
+/// Qdrant vector store over the REST API (enable the `qdrant` feature).
+#[cfg(feature = "qdrant")]
+pub use agent_framework_qdrant as qdrant;
 
 /// Microsoft Copilot Studio agent client (enable the `copilotstudio` feature).
 #[cfg(feature = "copilotstudio")]
@@ -196,7 +202,10 @@ pub mod prelude {
     pub use agent_framework_hosting::AgentHost;
 
     #[cfg(feature = "redis")]
-    pub use agent_framework_redis::{RedisChatMessageStore, RedisContextProvider};
+    pub use agent_framework_redis::{
+        RedisChatMessageStore, RedisContextProvider, RedisHistoryProvider, RedisVectorStore,
+        ValkeyChatHistoryProvider,
+    };
 
     #[cfg(feature = "mem0")]
     pub use agent_framework_mem0::Mem0Provider;
@@ -211,6 +220,9 @@ pub mod prelude {
 
     #[cfg(feature = "cosmos")]
     pub use agent_framework_cosmos::CosmosChatMessageStore;
+
+    #[cfg(feature = "qdrant")]
+    pub use agent_framework_qdrant::{QdrantCollection, QdrantStore};
 
     #[cfg(feature = "copilotstudio")]
     pub use agent_framework_copilotstudio::CopilotStudioAgent;

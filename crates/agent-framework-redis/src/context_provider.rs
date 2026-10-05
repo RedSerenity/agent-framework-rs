@@ -445,9 +445,14 @@ fn parse_ft_search_reply(value: &redis::Value) -> Vec<MemoryEntry> {
 /// optimistically (no separate existence probe first) and multiple
 /// provider instances/processes sharing a `key_prefix` will race to create
 /// the same index. RediSearch's documented error text for this case is the
-/// literal string `Index already exists`.
-fn is_index_exists_error(message: &str) -> bool {
-    message.to_lowercase().contains("index already exists")
+/// literal string `Index already exists`; `redis-rs` splits a reply's first
+/// word off as its error code, so the same reply can also display as
+/// `"Index": already exists` (observed against RediSearch 2.10), and both
+/// forms are matched.
+pub(crate) fn is_index_exists_error(message: &str) -> bool {
+    let message = message.to_lowercase();
+    message.contains("index already exists")
+        || (message.contains("\"index\"") && message.contains("already exists"))
 }
 
 /// Probe whether the connected server has RediSearch loaded, via `FT._LIST`
@@ -1438,6 +1443,15 @@ mod tests {
     #[test]
     fn is_index_exists_error_case_insensitive() {
         assert!(is_index_exists_error("INDEX ALREADY EXISTS"));
+    }
+
+    #[test]
+    fn is_index_exists_error_matches_the_redis_rs_split_form() {
+        // redis-rs renders the reply's first word as an error code.
+        assert!(is_index_exists_error(
+            "redis error: \"Index\": already exists"
+        ));
+        assert!(!is_index_exists_error("\"Index\": unknown field"));
     }
 
     #[test]

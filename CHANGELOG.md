@@ -39,6 +39,37 @@ nowhere), so a run that paused twice could not be resumed the second time.
 
 ### Added
 
+- **Redis vector store** (`agent_framework_redis::{RedisVectorStore,
+  RedisVectorCollection}`): a port of upstream's `RedisStore` /
+  `RedisCollection` on Redis Search. HASH (binary vectors) or JSON
+  storage, namespaced hex-encoded index names and document prefixes,
+  schema validation against an existing index, transactional batches of
+  100, `KNN` search plus `search_within_distance` (`VECTOR_RANGE`), and the
+  portable filter compiled to RediSearch `TAG`/`NUMERIC` syntax with
+  upstream's null/missing semantics. Scores are native distances (lower is
+  closer), flagged with `SCORE_KIND_DISTANCE` when the declared function does
+  not already say so.
+- **`RedisHistoryProvider`** (agent-framework-redis): upstream-parity
+  history provider with a builder — URL, host/port/TLS/username/password or
+  a `StreamingCredentialsProvider` (Entra ID), or a borrowed
+  `MultiplexedConnection` (#8883); scoped keys
+  (`{prefix}|v2|{tenant}|{application}|{agent}|{source}|{session}`, each
+  segment injectively encoded) or the deprecated legacy format;
+  `max_messages` (0 writes nothing), `load_messages`, `store_inputs`,
+  `store_outputs`, `message_count`, `to_dict`/`from_dict`. The redis crate
+  gains an optional `tls` feature. `RedisChatMessageStore` is unchanged.
+- **`ValkeyChatHistoryProvider`** (agent-framework-redis): a port of .NET's
+  `Microsoft.Agents.AI.Valkey` provider on the Redis client (Valkey speaks
+  RESP) — `chat_history` key prefix, `max_messages` (> 0) trimming,
+  `max_messages_to_retrieve` tail reads (0 reads nothing), malformed entries
+  skipped with a warning, `clear_messages`, `message_count`.
+- **`agent-framework-qdrant`**, a new crate (umbrella feature `qdrant`):
+  `QdrantStore` / `QdrantCollection` over Qdrant's REST API —
+  `QDRANT_URL`/`QDRANT_API_KEY` settings, named dense vectors, payload
+  indexes, create/validate/delete with the create-conflict readiness retry,
+  batched (256) upsert/get/delete with `wait=true`, u64/UUID point ids,
+  dense search with the portable filter, `get_filtered` (scroll) and
+  `search_with_score_threshold`.
 - **Upstream-format declarative workflows** (`declarative` crate, new
   `flow` module). `WorkflowFactory` — and `DeclarativeLoader::load_workflow`,
   which now dispatches on the document's shape — builds runnable workflows
@@ -239,6 +270,12 @@ nowhere), so a run that paused twice could not be resumed the second time.
   would hand one caller another's conversation.
 
 ### Fixed
+
+- `RedisContextProvider` failed its first run against RediSearch 2.10 when
+  two providers raced to create the shared index: `redis-rs` renders the
+  reply as `"Index": already exists`, which the "already exists" check did
+  not recognize. Both renderings are now matched (the new vector store
+  shares the check).
 
 - Core: a resolved approval exchange replayed from persisted history no
   longer re-executes the approved tool on every later run of the session.

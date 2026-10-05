@@ -20,9 +20,21 @@
 //!   **not** ported — see the [`context_provider`] module docs for the full
 //!   picture.
 //!
-//! Both types connect lazily: constructing them only parses the Redis URL
+//! - [`RedisHistoryProvider`] — the upstream-parity history provider:
+//!   URL, host/TLS/credential-provider or borrowed connection; scoped keys
+//!   (tenant / application / agent / source / session) or the legacy
+//!   format; `max_messages`, `load_messages`, `store_inputs`,
+//!   `store_outputs`. See [`history_provider`].
+//! - [`ValkeyChatHistoryProvider`] — a port of .NET's Valkey history
+//!   provider. Valkey speaks the Redis protocol, so it runs on this crate's
+//!   Redis client. See [`valkey`].
+//! - [`RedisVectorStore`] / [`RedisVectorCollection`] — a RediSearch-backed
+//!   [`VectorStore`](agent_framework_core::vectors::VectorStore) with HASH or
+//!   JSON storage and the portable filter set. See [`vector_store`].
+//!
+//! All types connect lazily: constructing them only parses the Redis URL
 //! (via [`redis::Client::open`]); the actual
-//! [`MultiplexedConnection`](redis::aio::MultiplexedConnection) is
+//! [`MultiplexedConnection`] is
 //! established on the first call that needs it.
 //!
 //! ```no_run
@@ -52,7 +64,28 @@
 
 pub mod chat_message_store;
 pub mod context_provider;
+pub mod history_provider;
 mod internal;
+pub mod valkey;
+pub mod vector_store;
+
+pub use history_provider::{
+    RedisHistoryProvider, RedisHistoryProviderBuilder, RedisKeyFormat, DEFAULT_HISTORY_KEY_PREFIX,
+    DEFAULT_HISTORY_SOURCE_ID,
+};
+/// Credentials for [`RedisHistoryProviderBuilder::credential_provider`]
+/// (re-exported from `redis::auth`), the counterpart of redis-py's
+/// `CredentialProvider`.
+pub use internal::{BasicAuth, StreamingCredentialsProvider};
+/// Re-exported so callers can hand a borrowed connection to the builders
+/// without depending on `redis` directly.
+pub use redis::aio::MultiplexedConnection;
+pub use valkey::{
+    ValkeyChatHistoryProvider, ValkeyChatHistoryProviderBuilder, DEFAULT_VALKEY_KEY_PREFIX,
+};
+pub use vector_store::{
+    RedisStorageType, RedisVectorCollection, RedisVectorStore, SCORE_KIND_DISTANCE,
+};
 
 pub use chat_message_store::{
     RedisChatMessageStore, DEFAULT_KEY_PREFIX as DEFAULT_STORE_KEY_PREFIX,
