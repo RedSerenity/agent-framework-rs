@@ -112,6 +112,18 @@ Legend: ✅ done · 🚧 partial · ❌ not yet.
 | Cosmos DB long-term memory provider | ✅ (`azure-cosmos-memory`: `CosmosMemoryContextProvider`, Agent Memory Toolkit extraction pipeline with cadence thresholds, background flush) | not found | ❌ not yet | distinct from the message store above — a `ContextProvider` doing LLM-backed memory extraction over Cosmos, closer in shape to `agent-framework-mem0` than to `CosmosChatMessageStore` |
 | Azure AI Content Understanding | ✅ (`azure-contentunderstanding`: `ContentUnderstandingContextProvider`, file-search backends for OpenAI and Foundry, media-type sniffing/attachment stripping) | not found | ❌ not yet | new upstream package with no Rust counterpart; would be the port's first document-ingestion surface |
 
+## Harness agent
+
+| Feature | Python | .NET | Rust | Notes |
+| --- | --- | --- | --- | --- |
+| Harness agent (`create_harness_agent` / `HarnessAgent`) | ✅ | ✅ (`Microsoft.Agents.AI.Harness`) | ✅ done | `agent-framework-harness::HarnessAgent` (+ `HarnessAgentBuilder`, `ChatClientHarnessExt::as_harness_agent`): harness instructions, hosted web search, token-budget compaction (before: per run; after: on the stored transcript), todo/mode/file-memory providers by default, opt-in file access, skills, background agents, tool approval, looping. Divergences: history persisted per run, not per service call; approval and looping are decorator agents (.NET's shape) rather than Python agent middleware; shell tooling, `skills_paths` discovery and `MessageInjectionMiddleware` not ported (no core counterpart) |
+| Todo / mode providers | ✅ | ✅ | ✅ done | `TodoProvider` (session-state and per-session JSON-file stores), `AgentModeProvider`, `get_agent_mode` / `set_agent_mode`; tool names, schemas, result JSON and instructions match upstream |
+| File access + file memory | ✅ | ✅ | ✅ done | `AgentFileStore`, `InMemoryAgentFileStore`, `FileSystemAgentFileStore` (root-confined: `..`/absolute/drive paths, symlinks on any segment or the root, `O_NOFOLLOW`), `FileAccessProvider` (8 tools, approval by default, session scoping), `FileMemoryProvider` (7 tools, sidecars, `memories.md` index). Regex search is linear-time (`regex-automata`) with upstream's 256-char cap and 10 s budget |
+| Topic memory (`MemoryContextProvider`) | ✅ | not found | ✅ done | `MemoryContextProvider` + `MemoryFileStore`: `MEMORY.md`, topic files, JSONL transcripts, extraction/consolidation; extraction needs an explicit client (no access to the agent's) |
+| Background agents | ✅ | ✅ | ✅ done | `BackgroundAgentsProvider`: six tools, tokio-task runtime, lost-task detection, `release_session` |
+| Tool approval ("don't ask again") | ✅ (`ToolApprovalMiddleware`) | ✅ (`ToolApprovalAgent`) | ✅ done | `ToolApprovalAgent`: standing rules (tool / tool+arguments), auto-approval callbacks, queued prompts, response binding, approval-not-required bypass. The always-approve scope rides on the carrying message's `additional_properties` (Rust approval contents have no property bag) |
+| Agent loop | ✅ (`AgentLoopMiddleware`) | ✅ (`LoopAgent`) | ✅ done | `LoopAgent` (+ `with_judge`, `todos_remaining`, `background_tasks_running` helpers); upstream's turn-scoped `after_run_once_per_turn` hook not modelled |
+
 ## Workflow engine
 
 | Feature | Python | .NET | Rust | Notes |

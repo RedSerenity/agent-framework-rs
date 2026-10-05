@@ -23,6 +23,7 @@ the order does not matter:
 2. **Tier 1** — `agent-framework-a2a`, `agent-framework-bedrock`,
    `agent-framework-copilotstudio`,
    `agent-framework-declarative`, `agent-framework-gemini`,
+   `agent-framework-harness`,
    `agent-framework-hosting`, `agent-framework-mcp`, `agent-framework-mem0`,
    `agent-framework-openai`, `agent-framework-purview`,
    `agent-framework-redis`
@@ -38,7 +39,7 @@ the order does not matter:
 # One tier at a time; crates.io indexing is fast but not instant, so give
 # each tier a moment before publishing the next.
 cargo publish -p agent-framework-core
-for c in a2a bedrock copilotstudio declarative gemini hosting mcp mem0 openai purview redis; do
+for c in a2a bedrock copilotstudio declarative gemini harness hosting mcp mem0 openai purview redis; do
   cargo publish -p agent-framework-$c
 done
 for c in azure foundry-local github-copilot mistral ollama; do

@@ -28,6 +28,7 @@
 //! | `cosmos` | [`agent_framework_cosmos`] — Cosmos DB NoSQL message store, workflow checkpoints, and vector store | no |
 //! | `copilotstudio` | [`agent_framework_copilotstudio`] — Copilot Studio agents | no |
 //! | `purview` | [`agent_framework_purview`] — Purview compliance middleware | no |
+//! | `harness` | [`agent_framework_harness`] — batteries-included harness agent (todos, modes, file access, file memory, background agents, tool approval, looping) | no |
 //!
 //! `full` enables everything.
 //!
@@ -133,6 +134,12 @@ pub use agent_framework_copilotstudio as copilotstudio;
 /// Microsoft Purview compliance middleware (enable the `purview` feature).
 #[cfg(feature = "purview")]
 pub use agent_framework_purview as purview;
+
+/// The batteries-included harness agent: todos, modes, sandboxed file
+/// access, file-backed memory, background sub-agents, tool-approval policy,
+/// and looping (enable the `harness` feature).
+#[cfg(feature = "harness")]
+pub use agent_framework_harness as harness;
 
 /// Commonly used imports for building agents and workflows.
 pub mod prelude {

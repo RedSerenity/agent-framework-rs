@@ -22,6 +22,7 @@ members = [
     "crates/agent-framework-cosmos",
     "crates/agent-framework-copilotstudio",
     "crates/agent-framework-purview",
+    "crates/agent-framework-harness",
     "crates/agent-framework",
     "examples",
 ]
@@ -135,6 +136,7 @@ agent-framework-azure-ai-search = { path = "crates/agent-framework-azure-ai-sear
 agent-framework-cosmos = { path = "crates/agent-framework-cosmos", version = "0.9.0" }
 agent-framework-copilotstudio = { path = "crates/agent-framework-copilotstudio", version = "0.9.0" }
 agent-framework-purview = { path = "crates/agent-framework-purview", version = "0.9.0" }
+agent-framework-harness = { path = "crates/agent-framework-harness", version = "0.9.0" }
 
 [profile.release]
 opt-level = 3

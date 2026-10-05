@@ -7,6 +7,58 @@ may break APIs).
 
 ## [Unreleased]
 
+### Added
+
+- **`agent-framework-harness`** — a new crate porting upstream's harness
+  agent (Python `agent_framework._harness`, `create_harness_agent`; .NET
+  `Microsoft.Agents.AI.Harness`), also reachable as
+  `agent_framework::harness` behind the umbrella crate's new `harness`
+  feature. `HarnessAgent::builder(client)` (or `client.as_harness_agent()`)
+  assembles an `Agent` with the harness instructions, hosted web search,
+  compaction, and the default providers, wrapped in a tool-approval
+  decorator and, optionally, a loop:
+  - `TodoProvider` (`todos_add` / `todos_complete` / `todos_remove` /
+    `todos_get_remaining` / `todos_get_all`) over session-state or
+    per-session JSON-file stores;
+  - `AgentModeProvider` (`plan` / `execute`, `mode_set` / `mode_get`,
+    `get_agent_mode` / `set_agent_mode` with external-change notification);
+  - `FileAccessProvider` over an `AgentFileStore` — in-memory, or a
+    `FileSystemAgentFileStore` sandboxed to its root (rejects `..`,
+    absolute and drive-rooted paths, symlinks or reparse points on any
+    segment and on the root itself, `O_NOFOLLOW` opens, links skipped in
+    listings and searches) — with eight `file_access_*` tools that require
+    approval by default, line-addressed editing, and linear-time,
+    deadline-bounded regex search; optional per-session scoping;
+  - `FileMemoryProvider` (seven `file_memory_*` tools, description
+    sidecars, an auto-maintained `memories.md` index injected each run);
+  - `MemoryContextProvider` + `MemoryFileStore` (topic files, `MEMORY.md`,
+    JSONL transcript archive, LLM extraction and consolidation);
+  - `BackgroundAgentsProvider` (six `background_agents_*` tools running
+    sub-agents as tokio tasks, with lost-task detection and
+    `release_session`);
+  - `ToolApprovalAgent` ("always approve" standing rules for a tool or
+    tool+arguments, heuristic auto-approval callbacks, queued one-at-a-time
+    prompts, inbound-response binding to surfaced requests, and bypass of
+    sibling calls that need no approval);
+  - `LoopAgent` (`should_continue` / `next_message` / progress log,
+    `fresh_context`, judge loops via `LoopAgent::with_judge`, and the
+    `todos_remaining` / `background_tasks_running` helpers);
+  - `SessionStateHistoryProvider`, the harness's default, state-backed
+    history (with optional after-run compaction).
+- Core: `SessionContext::session_state`, a by-reference handle on the run's
+  `AgentSession::state` that `Agent` now passes to every provider's
+  `before_run`, and `ContextProvider::after_run_in_session`, a session-aware
+  completion hook (defaulting to `after_run`) that `Agent` now calls. Both
+  are additive.
+
+### Fixed
+
+- Core: a resolved approval exchange replayed from persisted history no
+  longer re-executes the approved tool on every later run of the session.
+  The tool loop now drops approval requests/responses already answered by a
+  later function result, and an approval-resuming response carries the
+  resolved results (or rejections) so history records them.
+
 ## [0.9.0] — 2026-09-30
 
 Four values the code already had and never read, a Foundry surface it could
