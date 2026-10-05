@@ -3,16 +3,17 @@
 //!
 //! ## Relationship to the official schema
 //!
-//! The upstream `.NET` declarative *workflow* schema
-//! (`Microsoft.Agents.AI.Workflows.Declarative`) is a Power Platform /
-//! Copilot Studio imperative DSL: a `trigger` with ordered `actions`
-//! (`SetVariable`, `ConditionGroup`, `GotoAction`, `InvokeAzureAgent`,
-//! `SendActivity`, …) evaluated with PowerFx expressions. That model does not
-//! map onto this port's Pregel/BSP graph engine (executors + edges), and the
-//! mission forbids building a parallel engine.
+//! The upstream declarative *workflow* schema (Python
+//! `agent_framework_declarative._workflows`, .NET
+//! `Microsoft.Agents.AI.Workflows.Declarative`) — a `trigger` with ordered
+//! `actions` (`SetVariable`, `ConditionGroup`, `GotoAction`,
+//! `InvokeAzureAgent`, `SendActivity`, …) evaluated with PowerFx — is
+//! implemented by the [`flow`](crate::flow) module, and
+//! [`DeclarativeLoader::load_workflow`](crate::DeclarativeLoader::load_workflow)
+//! routes such documents there automatically.
 //!
-//! This [`WorkflowSpec`] is therefore a **documented Rust-native extension**
-//! that drives the existing
+//! This [`WorkflowSpec`] is a separate, **documented Rust-native extension**
+//! kept for backward compatibility. It drives the existing
 //! [`WorkflowBuilder`](agent_framework_core::workflow::WorkflowBuilder) and the
 //! orchestration builders (`SequentialBuilder`, `ConcurrentBuilder`,
 //! `GroupChatBuilder`, `HandoffBuilder`). It keeps the official top-level

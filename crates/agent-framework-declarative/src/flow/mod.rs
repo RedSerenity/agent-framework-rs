@@ -48,7 +48,7 @@
 //! | `CreateConversation`, `AddConversationMessage`, `CopyConversationMessages`, `RetrieveConversationMessage`, `RetrieveConversationMessages` | conversations live in `System.conversations` (the last four are .NET actions upstream Python lacks) |
 //! | `If`, `ConditionGroup`, `Foreach`, `GotoAction`, `BreakLoop`, `ContinueLoop` | graph structure, see [`builder`](self) docs |
 //! | `EndWorkflow`, `EndDialog`, `EndConversation`, `CancelDialog`, `CancelAllDialogs` | stop the current path |
-//! | `InvokeAzureAgent` | any registered [`SupportsAgentRun`](agent_framework_core::agent::SupportsAgentRun); external loop HITL |
+//! | `InvokeAzureAgent` | any registered [`SupportsAgentRun`] agent; external loop HITL |
 //! | `Question`, `RequestExternalInput`, `RequestHumanInput`, `WaitForHumanInput` | pause via the core request/response mechanism |
 //! | `InvokeFunctionTool` | registered [`Tool`]s, optional approval |
 //! | `HttpRequestAction` | through an [`HttpRequestHandler`] |
