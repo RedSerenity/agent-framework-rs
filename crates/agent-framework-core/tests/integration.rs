@@ -1108,6 +1108,120 @@ async fn agent_surfaces_and_resolves_approval_round_trip() {
     assert!(recorded.iter().any(|m| !m.user_input_requests().is_empty()));
 }
 
+/// `Agent` hands providers the session's state bag in `before_run` and the
+/// session itself in `after_run_in_session`.
+#[tokio::test]
+async fn providers_see_the_session_state_and_the_session_after_the_run() {
+    struct StateProbe {
+        seen_after: Mutex<Option<String>>,
+    }
+    #[async_trait]
+    impl ContextProvider for StateProbe {
+        async fn before_run(&self, ctx: &mut SessionContext) -> Result<()> {
+            let state = ctx
+                .session_state
+                .clone()
+                .expect("agent supplies the state bag");
+            state.insert("probe", json!("written in before_run"));
+            Ok(())
+        }
+        async fn after_run_in_session(
+            &self,
+            session: &AgentSession,
+            _request: &[Message],
+            _response: &[Message],
+            _error: Option<&Error>,
+        ) -> Result<()> {
+            *self.seen_after.lock().unwrap() = Some(session.session_id().to_string());
+            Ok(())
+        }
+    }
+    let probe = Arc::new(StateProbe {
+        seen_after: Mutex::new(None),
+    });
+    let agent = Agent::builder(MockClient::new(vec![ChatResponse::from_text("ok")]))
+        .context_provider(probe.clone())
+        .build();
+    let mut session = agent.create_session();
+    agent
+        .run(vec![Message::user("hi")], Some(&mut session))
+        .await
+        .unwrap();
+    assert_eq!(
+        session.state.get("probe"),
+        Some(json!("written in before_run"))
+    );
+    assert_eq!(
+        probe.seen_after.lock().unwrap().as_deref(),
+        Some(session.session_id())
+    );
+}
+
+/// A resolved approval exchange persists in history; later runs on the same
+/// session must not execute the approved (or rejected) call again, and the
+/// conversation sent to the model must stay well-formed (each call paired
+/// with exactly one result, no raw approval contents).
+#[tokio::test]
+async fn a_resolved_approval_is_not_re_executed_by_later_runs() {
+    for approved in [true, false] {
+        let counter = Arc::new(Mutex::new(0));
+        let client = MockClient::new(vec![
+            secret_call(),
+            ChatResponse::from_text("first answer"),
+            ChatResponse::from_text("second answer"),
+            ChatResponse::from_text("third answer"),
+        ]);
+        let agent = Agent::builder(client.clone())
+            .tool(approval_tool(counter.clone()))
+            .build();
+        let mut session = agent.create_session();
+        let resp1 = agent
+            .run(vec![Message::user("get the secret")], Some(&mut session))
+            .await
+            .unwrap();
+        let approval = resp1.user_input_requests()[0].create_response(approved);
+        let resp2 = agent
+            .run(
+                vec![Message::with_contents(
+                    Role::user(),
+                    vec![Content::FunctionApprovalResponse(approval)],
+                )],
+                Some(&mut session),
+            )
+            .await
+            .unwrap();
+        // The resolved result is part of the response, so history records it.
+        assert!(resp2.messages[0]
+            .contents
+            .iter()
+            .any(|c| matches!(c, Content::FunctionResult(r) if r.call_id == "call_1")));
+        let expected = u32::from(approved);
+        assert_eq!(*counter.lock().unwrap(), expected);
+        for turn in ["again", "and again"] {
+            agent
+                .run(vec![Message::user(turn)], Some(&mut session))
+                .await
+                .unwrap();
+        }
+        assert_eq!(*counter.lock().unwrap(), expected, "approved={approved}");
+        let sent = client.all_seen().last().cloned().unwrap();
+        let contents: Vec<&Content> = sent.iter().flat_map(|m| m.contents.iter()).collect();
+        assert!(!contents.iter().any(|c| matches!(
+            c,
+            Content::FunctionApprovalRequest(_) | Content::FunctionApprovalResponse(_)
+        )));
+        let calls = contents
+            .iter()
+            .filter(|c| matches!(c, Content::FunctionCall(_)))
+            .count();
+        let results = contents
+            .iter()
+            .filter(|c| matches!(c, Content::FunctionResult(_)))
+            .count();
+        assert_eq!((calls, results), (1, 1), "approved={approved}");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // SupportsAgentRun-as-tool
 // ---------------------------------------------------------------------------

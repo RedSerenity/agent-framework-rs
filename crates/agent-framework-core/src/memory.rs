@@ -13,6 +13,7 @@
 use async_trait::async_trait;
 
 use crate::error::{Error, Result};
+use crate::session::{AgentSession, SessionState};
 use crate::tools::ToolDefinition;
 use crate::types::Message;
 
@@ -32,6 +33,19 @@ pub struct SessionContext {
     pub messages: Vec<Message>,
     /// Extra tools to make available for this run.
     pub tools: Vec<ToolDefinition>,
+    /// A handle onto the run's [`AgentSession::state`](crate::session::AgentSession::state)
+    /// bag, when the run has a session (every [`Agent`](crate::agent::Agent)
+    /// run does). Shared by reference — see [`SessionState`] — so a provider
+    /// can read and persist per-session data in `before_run`, and hand the
+    /// handle to the tools it injects.
+    ///
+    /// Mirrors the `session` argument upstream's `before_run(*, agent,
+    /// session, context, state)` receives: upstream providers such as the
+    /// harness `TodoProvider` / `AgentModeProvider` keep their state in
+    /// `session.state`, which this field makes reachable without widening
+    /// the `before_run` signature. `None` when a caller drives a provider
+    /// without a session.
+    pub session_state: Option<SessionState>,
 }
 
 impl SessionContext {
@@ -71,6 +85,29 @@ pub trait ContextProvider: Send + Sync {
         _error: Option<&Error>,
     ) -> Result<()> {
         Ok(())
+    }
+
+    /// Session-aware variant of [`ContextProvider::after_run`], called by
+    /// [`Agent`](crate::agent::Agent) with the run's session.
+    ///
+    /// The default implementation ignores `session` and delegates to
+    /// [`ContextProvider::after_run`], so existing providers are unaffected.
+    /// Override it when completion handling needs the session — its id or
+    /// its [`state`](AgentSession::state) bag — which upstream's
+    /// `after_run(*, agent, session, context, state)` always receives (the
+    /// harness's session-state-backed history and memory providers do).
+    /// Callers that only have the sessionless hook (e.g.
+    /// [`WorkflowAgent`](crate::workflow::WorkflowAgent)) keep calling
+    /// [`ContextProvider::after_run`].
+    async fn after_run_in_session(
+        &self,
+        _session: &AgentSession,
+        request_messages: &[Message],
+        response_messages: &[Message],
+        error: Option<&Error>,
+    ) -> Result<()> {
+        self.after_run(request_messages, response_messages, error)
+            .await
     }
 
     /// Whether this provider manages conversation history (a
@@ -117,5 +154,35 @@ mod tests {
         assert!(ctx.instructions.is_none());
         assert!(ctx.messages.is_empty());
         assert!(ctx.tools.is_empty());
+        assert!(ctx.session_state.is_none());
+    }
+
+    struct Recording(std::sync::Mutex<Vec<String>>);
+
+    #[async_trait]
+    impl ContextProvider for Recording {
+        async fn before_run(&self, _ctx: &mut SessionContext) -> Result<()> {
+            Ok(())
+        }
+        async fn after_run(
+            &self,
+            _request: &[Message],
+            response: &[Message],
+            _error: Option<&Error>,
+        ) -> Result<()> {
+            self.0.lock().unwrap().push(response[0].text());
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn after_run_in_session_defaults_to_after_run() {
+        let provider = Recording(std::sync::Mutex::new(Vec::new()));
+        let session = AgentSession::new();
+        provider
+            .after_run_in_session(&session, &[], &[Message::assistant("done")], None)
+            .await
+            .unwrap();
+        assert_eq!(*provider.0.lock().unwrap(), vec!["done".to_string()]);
     }
 }

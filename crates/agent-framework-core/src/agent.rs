@@ -478,14 +478,17 @@ impl Agent {
                 Ok(r) => r,
                 Err(e) => {
                     for cp in self.combined_providers(&session) {
-                        let _ = cp.after_run(&input, &[], Some(&e)).await;
+                        let _ = cp
+                            .after_run_in_session(&session, &input, &[], Some(&e))
+                            .await;
                     }
                     return Err(e);
                 }
             };
             self.update_session_conversation_id(&mut session, response.conversation_id.as_deref())?;
             for cp in self.combined_providers(&session) {
-                cp.after_run(&input, &response.messages, None).await?;
+                cp.after_run_in_session(&session, &input, &response.messages, None)
+                    .await?;
             }
             // Distinct message ids keep boundaries when re-aggregated; the
             // response's conversation/response ids and usage ride along so
@@ -510,7 +513,9 @@ impl Agent {
             Err(e) => {
                 // Failure before the stream opens: let providers observe it.
                 for cp in &providers {
-                    let _ = cp.after_run(&input, &[], Some(&e)).await;
+                    let _ = cp
+                        .after_run_in_session(&session, &input, &[], Some(&e))
+                        .await;
                 }
                 return Err(e);
             }
@@ -570,6 +575,9 @@ impl Agent {
         let mut ctx = SessionContext::new(input.to_vec());
         ctx.session_id = Some(session.session_id().to_string());
         ctx.service_session_id = service_session_id.clone();
+        // Shared by reference: providers (and the tools they inject) see and
+        // persist into the very same state bag the caller's session holds.
+        ctx.session_state = Some(session.state.clone());
         for provider in &providers {
             provider.before_run(&mut ctx).await?;
         }
@@ -887,9 +895,11 @@ fn async_stream_forward(
                         // Failure mid-stream: let context providers observe the
                         // error before surfacing it. The stream error takes
                         // precedence, so the hooks' results are discarded.
-                        if let Some((_session, input, providers, _rf)) = finish.take() {
+                        if let Some((session, input, providers, _rf)) = finish.take() {
                             for cp in &providers {
-                                let _ = cp.after_run(&input, &[], Some(&e)).await;
+                                let _ = cp
+                                    .after_run_in_session(&session, &input, &[], Some(&e))
+                                    .await;
                             }
                         }
                         Some((Err(e), (inner, collected, true, None)))
@@ -924,7 +934,14 @@ fn async_stream_forward(
                                 }
                             }
                             for cp in providers {
-                                if let Err(e) = cp.after_run(&input, &response.messages, None).await
+                                if let Err(e) = cp
+                                    .after_run_in_session(
+                                        &session,
+                                        &input,
+                                        &response.messages,
+                                        None,
+                                    )
+                                    .await
                                 {
                                     return Some((Err(e), (inner, collected, true, None)));
                                 }
@@ -973,7 +990,9 @@ impl SupportsAgentRun for Agent {
                 // The run's error takes precedence over any hook failure, so
                 // the hook result is intentionally discarded.
                 for cp in self.combined_providers(session) {
-                    let _ = cp.after_run(&messages, &[], Some(&e)).await;
+                    let _ = cp
+                        .after_run_in_session(session, &messages, &[], Some(&e))
+                        .await;
                 }
                 return Err(e);
             }
@@ -987,7 +1006,8 @@ impl SupportsAgentRun for Agent {
         // Fire the context providers' success completion hook (this is what
         // records history, for any attached `HistoryProvider`).
         for cp in self.combined_providers(session) {
-            cp.after_run(&messages, &response.messages, None).await?;
+            cp.after_run_in_session(session, &messages, &response.messages, None)
+                .await?;
         }
 
         Ok(response)
