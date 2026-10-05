@@ -46,7 +46,7 @@
 //! | `ParseValue` | with `valueType` conversion |
 //! | `EditTable`, `EditTableV2` | Python (`table`/`operation`) and .NET (`itemsVariable`/`changeType`) shapes |
 //! | `CreateConversation`, `AddConversationMessage`, `CopyConversationMessages`, `RetrieveConversationMessage`, `RetrieveConversationMessages` | conversations live in `System.conversations` (the last four are .NET actions upstream Python lacks) |
-//! | `If`, `ConditionGroup`, `Foreach`, `GotoAction`, `BreakLoop`, `ContinueLoop` | graph structure, see [`builder`](self) docs |
+//! | `If`, `ConditionGroup`, `Foreach`, `GotoAction`, `BreakLoop`, `ContinueLoop` | graph structure, see *Graph structure* below |
 //! | `EndWorkflow`, `EndDialog`, `EndConversation`, `CancelDialog`, `CancelAllDialogs` | stop the current path |
 //! | `InvokeAzureAgent` | any registered [`SupportsAgentRun`] agent; external loop HITL |
 //! | `Question`, `RequestExternalInput`, `RequestHumanInput`, `WaitForHumanInput` | pause via the core request/response mechanism |
@@ -56,6 +56,30 @@
 //!
 //! Unknown action kinds are skipped with a warning, as upstream does, unless
 //! [`WorkflowFactory::strict_actions`] is enabled.
+//!
+//! # Graph structure
+//!
+//! Every action becomes an executor (ids are the action `id`, else
+//! generated as upstream: `{Kind}_{n}` / `{parent}_{Kind}_{n}`), joined by
+//! plain edges except after a terminator (`GotoAction`, `BreakLoop`,
+//! `ContinueLoop`, `End*`, `Cancel*`). `If`/`ConditionGroup` become an
+//! `<id>_eval` node that sends the index of the first true condition, with
+//! conditional edges into each branch and a pass-through (`<id>_else_pass` /
+//! `<id>_default`) when there is no else; every branch exit continues to the
+//! next action. `Foreach` becomes `<id>_init` → body → `<id>_next` → body,
+//! leaving through `<id>_exit`; `BreakLoop`/`ContinueLoop` signal `<id>_next`.
+//! `GotoAction` adds an edge to its target (back edges make loops). A fixed
+//! [`ENTRY_ID`] node receives the run input. One action runs per superstep,
+//! so `maxTurns` (default 100) bounds the number of actions executed.
+//!
+//! Build-time validation mirrors upstream: duplicate or reserved ids, missing
+//! required fields (with upstream's alternates), `ConditionGroup`
+//! `else`/`default`, self-targeting or unknown goto targets, loop signals
+//! outside a loop, and HTTP/MCP actions without a handler are errors.
+//! Strictly more permissive than upstream: unreachable actions (dead code
+//! after a terminator) are pruned instead of rejected, a goto may target an
+//! `If`/`ConditionGroup`/`Foreach` id, and `Foreach.items` satisfies
+//! `source`.
 //!
 //! # Input
 //!
@@ -83,7 +107,10 @@
 //!   engine assigns its own request ids (the payload's `request_id` is for
 //!   correlation/binding only).
 //! * Values are rendered with Python `str()` semantics for scalars
-//!   (`True`, `None`) but as compact JSON for objects and arrays.
+//!   (`True`, `None`, `3.0`) but as compact JSON for objects and arrays.
+//! * State lives in JSON objects, whose keys are sorted; mapping order is
+//!   kept only where it is observable upstream through action definitions
+//!   (`input.arguments` text, HTTP/MCP headers and query parameters).
 //! * `${VAR}` interpolation is **not** applied to upstream-format workflows
 //!   (upstream has none; use `=Env.VAR`).
 //! * YAML is parsed as YAML 1.2 (`yes`/`no` are strings), whereas PyYAML

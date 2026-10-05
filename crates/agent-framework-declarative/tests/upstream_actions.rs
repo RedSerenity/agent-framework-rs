@@ -516,6 +516,65 @@ async fn env_symbol_uses_configuration_only_by_default() {
     );
 }
 
+#[tokio::test]
+async fn conversation_message_actions_round_trip() {
+    let w = wf(
+        &WorkflowFactory::new(),
+        r#"
+- kind: CreateConversation
+  conversationId: Local.conv
+- kind: AddConversationMessage
+  conversationId: =Local.conv
+  message: Local.added
+  role: Agent
+  content:
+    - type: Text
+      value: "Hello {Workflow.Inputs.name}"
+  metadata: { source: test }
+- kind: CopyConversationMessages
+  conversationId: =Local.conv
+  messages: =[UserMessage("one"), UserMessage("two")]
+- kind: RetrieveConversationMessage
+  conversationId: =Local.conv
+  messageId: =Local.added.message_id
+  message: Local.fetched
+- kind: RetrieveConversationMessages
+  conversationId: =Local.conv
+  messages: Local.latest
+  limit: 2
+  sortOrder: NewestFirst
+"#,
+    );
+    let v = vars(&w.run(json!({"name": "Ada"})).await.unwrap()).await;
+    let added = &v["Local"]["added"];
+    assert_eq!(added["role"], "assistant");
+    assert_eq!(added["contents"][0]["text"], "Hello Ada");
+    assert_eq!(added["additional_properties"]["source"], "test");
+    assert_eq!(&v["Local"]["fetched"], added);
+    let latest = v["Local"]["latest"].as_array().unwrap();
+    assert_eq!(latest.len(), 2);
+    assert_eq!(latest[0]["contents"][0]["text"], "two");
+    assert_eq!(latest[1]["contents"][0]["text"], "one");
+}
+
+#[tokio::test]
+async fn human_input_aliases_pause_like_request_external_input() {
+    for kind in ["RequestHumanInput", "WaitForHumanInput"] {
+        let w = wf(
+            &WorkflowFactory::new(),
+            &format!(
+                "- kind: {kind}\n  variable: Local.answer\n  prompt: Approve?\n- kind: SendActivity\n  activity: =Local.answer\n"
+            ),
+        );
+        let mut run = w.run(json!({})).await.unwrap();
+        let (id, req) = pending(&run);
+        assert_eq!(req["message"], "Approve?", "{kind}");
+        assert_eq!(req["metadata"]["output_property"], "Local.answer");
+        run.send_response(id, json!("yes")).await.unwrap();
+        assert_eq!(texts(&run), vec!["yes"], "{kind}");
+    }
+}
+
 // ------------------------------------------------------------ validation
 
 #[test]

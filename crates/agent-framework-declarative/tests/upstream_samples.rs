@@ -1,6 +1,11 @@
-//! Upstream sample workflows (Python samples, `declarative-agents/
-//! workflow-samples`, and .NET unit-test workflows) run offline with
-//! scripted agents and functions.
+//! Upstream sample workflows run offline with scripted agents and functions.
+//!
+//! Fixtures under `tests/fixtures/upstream/` are verbatim copies (MIT) from
+//! the upstream microsoft/agent-framework repository:
+//!   * `python/*.yaml` — `python/samples/03-workflows/declarative/<name>/workflow.yaml`
+//!     (and `test_http_request.yaml` from `python/packages/declarative/tests/workflows/`)
+//!   * `workflow-samples/*.yaml` — `declarative-agents/workflow-samples/`
+//!   * `dotnet/*.yaml` — `dotnet/tests/Microsoft.Agents.AI.Workflows.Declarative.UnitTests/Workflows/`
 
 mod common;
 
